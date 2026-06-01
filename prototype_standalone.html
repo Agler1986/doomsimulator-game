@@ -1,0 +1,2344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DoomSimulator — Prototype Bloc 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0B1220;
+    --panel:    #13243A;
+    --border:   #1E3047;
+    --text:     #EAF2F8;
+    --text-dim: #8AA0B4;
+    --cyan:     #2DE2E6;
+    --chrome:   #B8C6D4;
+    --safe:     #34D399;
+    --warn:     #F5B544;
+    --danger:   #FF3864;
+    --bull:     #34D399;
+    --bear:     #FF3864;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:'Poppins', sans-serif; }
+  body { min-height:100vh; padding:20px; }
+  .titlebar { display:flex; align-items:baseline; gap:14px; margin-bottom:6px; }
+  .title { font-family:'Orbitron', sans-serif; font-weight:700; font-size:22px; letter-spacing:0.06em; color:var(--text); }
+  .scenario { font-size:13px; color:var(--text-dim); }
+  .ribbon { font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.18em; color:var(--text-dim); margin-bottom:18px; text-transform:uppercase; }
+  .ribbon b { color:var(--cyan); font-weight:500; }
+  .ribbon .tick-counter { color:var(--cyan); font-variant-numeric: tabular-nums; }
+  .layout { display:grid; grid-template-columns: 1fr 320px; gap:18px; }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:18px; position:relative; }
+  .chart-wrap { position:relative; height:520px; }
+  @media (max-width: 820px) { .chart-wrap { height:380px; } }
+  canvas { width:100%; height:100%; display:block; }
+
+  /* Tooltip de bougie : info contextuelle au survol */
+  .tooltip {
+    position:absolute; pointer-events:none;
+    background:rgba(11,18,32,0.92);
+    border:1px solid var(--cyan);
+    border-radius:3px;
+    padding:8px 11px;
+    font-family:'Poppins',sans-serif;
+    font-size:11px;
+    color:var(--text);
+    line-height:1.5;
+    white-space:nowrap;
+    opacity:0;
+    transition:opacity .12s;
+    z-index:4;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+  }
+  .tooltip.show { opacity:1; }
+  .tooltip .tt-date {
+    font-family:'Orbitron',sans-serif;
+    font-size:10px;
+    letter-spacing:0.12em;
+    color:var(--cyan);
+    margin-bottom:5px;
+    text-transform:uppercase;
+  }
+  .tooltip .tt-row { display:flex; justify-content:space-between; gap:14px; }
+  .tooltip .tt-row .lbl { color:var(--text-dim); }
+  .tooltip .tt-row .val { font-weight:700; }
+  .tooltip .tt-row .val.bull { color:var(--bull); }
+  .tooltip .tt-row .val.bear { color:var(--bear); }
+  /* Petit guide vertical à la position du curseur */
+  
+  /* Bouton plein écran : discret, en haut à droite du panneau graphique */
+  .fs-btn {
+    position:absolute; top:10px; right:10px; z-index:5;
+    background:rgba(11,18,32,0.55); color:var(--text-dim);
+    border:1px solid var(--border); border-radius:3px;
+    width:30px; height:30px; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:color .15s, border-color .15s, background .15s;
+  }
+  .fs-btn:hover { color:var(--cyan); border-color:var(--cyan); background:rgba(11,18,32,0.85); }
+
+  /* En mode plein écran : le panneau remplit l'écran, le graphique aussi */
+  #chart-panel:fullscreen {
+    background:var(--bg);
+    padding:24px;
+    border-radius:0;
+    border:none;
+    width:100vw; height:100vh;
+    display:flex; flex-direction:column;
+  }
+  #chart-panel:fullscreen .chart-wrap {
+    flex:1; height:auto; min-height:0;
+  }
+  #chart-panel:fullscreen .controls { margin-top:18px; }
+  /* compat préfixée */
+  #chart-panel:-webkit-full-screen { background:var(--bg); padding:24px; border-radius:0; border:none; width:100vw; height:100vh; display:flex; flex-direction:column; }
+  #chart-panel:-webkit-full-screen .chart-wrap { flex:1; height:auto; min-height:0; }
+  .stats { display:flex; flex-direction:column; gap:14px; }
+  .stat label { font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.18em; color:var(--text-dim); display:block; margin-bottom:4px; text-transform:uppercase; }
+  .stat .value { font-family:'Poppins', sans-serif; font-weight:700; font-size:30px; line-height:1.1; }
+  .stat .value.danger { color:var(--danger); }
+  .stat .value.warn   { color:var(--warn); }
+  .stat .value.safe   { color:var(--safe); }
+
+  /* Holdings (LUNA + cash) : info secondaire, plus petite, sur 2 colonnes */
+  .holdings {
+    display:grid; grid-template-columns: 1fr 1fr;
+    gap:14px;
+    padding:12px 0;
+    border-top:1px solid var(--border);
+    border-bottom:1px solid var(--border);
+  }
+  .stat-mini label { font-family:'Orbitron',sans-serif; font-size:9px; letter-spacing:0.16em; color:var(--text-dim); display:block; margin-bottom:3px; text-transform:uppercase; }
+  .stat-mini .value-mini { font-family:'Poppins',sans-serif; font-weight:500; font-size:16px; color:var(--text); }
+  .stat-mini .unit { font-size:10px; color:var(--text-dim); font-weight:400; letter-spacing:0.08em; margin-left:2px; }
+
+  /* Actions : zone d'agitation du joueur */
+  .actions { display:flex; flex-direction:column; gap:10px; padding:4px 0; }
+  .action-row { display:flex; flex-direction:column; gap:6px; }
+  .action-label {
+    font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.16em;
+    color:var(--text-dim); text-transform:uppercase;
+  }
+  .action-btns { display:grid; grid-template-columns: repeat(4, 1fr); gap:5px; }
+  .abtn {
+    background:transparent; color:var(--text);
+    border:1px solid var(--border); border-radius:3px;
+    padding:8px 0;
+    font-family:'Orbitron',sans-serif; font-size:11px; font-weight:500;
+    letter-spacing:0.06em; cursor:pointer;
+    transition: background .15s, color .15s, border-color .15s, transform .08s;
+  }
+  .abtn.buy:hover:not(:disabled)  { border-color:var(--safe); color:var(--safe); background:rgba(52,211,153,0.08); }
+  .abtn.sell:hover:not(:disabled) { border-color:var(--danger); color:var(--danger); background:rgba(255,56,100,0.08); }
+  .abtn.analyze {
+    border-color:var(--cyan); color:var(--cyan);
+    grid-column: 1 / -1;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .abtn.analyze:hover:not(:disabled) { background:rgba(45,226,230,0.10); }
+  .abtn.analyze .analyze-uses { font-size:10px; color:var(--text-dim); font-weight:400; }
+  .action-btns.single { grid-template-columns: 1fr; }
+
+  /* === JAUGES PSYCHOLOGIQUES (visibles pendant le jeu) === */
+  .psy-meters {
+    padding:14px 0 4px 0;
+    border-top:1px solid var(--border);
+    margin-top:4px;
+  }
+  .psy-meters-title {
+    font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.18em;
+    color:var(--text-dim); text-transform:uppercase; margin-bottom:10px;
+  }
+  .psy-row { margin-bottom:9px; }
+  .psy-row:last-child { margin-bottom:0; }
+  .psy-label {
+    display:flex; justify-content:space-between;
+    font-family:'Poppins',sans-serif; font-size:11px;
+    color:var(--text-dim); margin-bottom:3px;
+  }
+  .psy-val { font-family:'Poppins',sans-serif; font-weight:500; color:var(--text); font-variant-numeric: tabular-nums; }
+  .psy-bar {
+    height:5px; background:rgba(255,255,255,0.06);
+    border-radius:3px; overflow:hidden;
+  }
+  .psy-fill {
+    display:block; height:100%; width:0%;
+    border-radius:3px;
+    transition: width .35s ease-out, background .25s;
+  }
+  /* Couleurs : les trois "négatifs" (stress, impulse, illusion) en gradient ambre→rouge.
+     Lucidity en vert/cyan pour signifier que c'est la jauge qu'on cherche à garder haute. */
+  .psy-fill-stress    { background:linear-gradient(90deg, var(--warn), var(--danger)); }
+  .psy-fill-impulse   { background:linear-gradient(90deg, var(--warn), var(--danger)); }
+  .psy-fill-illusion  { background:linear-gradient(90deg, var(--warn), var(--danger)); }
+  .psy-fill-lucidity  { background:linear-gradient(90deg, var(--safe), var(--cyan)); }
+
+  /* Feedback éphémère de l'ANALYZE (apparaît en bas du panneau graphique) */
+  .analyze-feedback {
+    position:absolute; left:14px; right:14px; bottom:14px;
+    background:rgba(11,18,32,0.92);
+    border:1px solid var(--cyan);
+    border-left:3px solid var(--cyan);
+    border-radius:4px;
+    padding:12px 14px;
+    font-family:'Poppins',sans-serif; font-size:12px; line-height:1.5;
+    color:var(--text);
+    opacity:0; transform:translateY(8px);
+    transition:opacity .25s, transform .25s;
+    pointer-events:none;
+    z-index:6;
+    box-shadow:0 8px 22px rgba(0,0,0,0.45);
+  }
+  .analyze-feedback.show { opacity:1; transform:translateY(0); }
+
+  /* === OVERLAY DE DÉMARRAGE === */
+  .play-overlay {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:18px;
+    background:linear-gradient(180deg, rgba(11,18,32,0.94), rgba(11,18,32,0.88));
+    backdrop-filter: blur(2px);
+    z-index:7;
+    transition: opacity .35s ease-out;
+  }
+  .play-overlay.hidden { opacity:0; pointer-events:none; }
+  .play-overlay-tag {
+    font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:0.2em;
+    color:var(--cyan); text-transform:uppercase;
+  }
+  .play-overlay-title {
+    font-family:'Orbitron',sans-serif; font-size:22px; font-weight:700;
+    color:var(--text); text-align:center;
+    max-width:560px; line-height:1.4; letter-spacing:0.02em;
+  }
+  .play-overlay-sub {
+    font-family:'Poppins',sans-serif; font-size:13px; color:var(--text-dim);
+    text-align:center;
+  }
+  .play-btn {
+    margin-top:8px;
+    background:var(--cyan); color:#0B1220;
+    border:none; cursor:pointer;
+    padding:14px 32px;
+    font-family:'Orbitron',sans-serif; font-size:14px; font-weight:700;
+    letter-spacing:0.18em;
+    display:inline-flex; align-items:center; gap:10px;
+    box-shadow:0 0 24px rgba(45,226,230,0.35);
+    transition: transform .15s, box-shadow .15s, filter .15s;
+  }
+  .play-btn:hover { filter:brightness(1.12); box-shadow:0 0 32px rgba(45,226,230,0.55); transform:translateY(-1px); }
+  .play-btn:active { transform:translateY(0); }
+  .play-btn svg { display:block; }
+
+  /* === SÉLECTEUR DE SCÉNARIO mis en évidence === */
+  #lbl-scen-select {
+    display:inline-flex; align-items:center; gap:8px;
+    background:rgba(45,226,230,0.08);
+    border:1px solid var(--cyan);
+    border-radius:4px;
+    padding:6px 10px 6px 12px;
+    font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:0.14em;
+    color:var(--cyan); text-transform:uppercase;
+    box-shadow:0 0 16px rgba(45,226,230,0.15);
+    position:relative;
+  }
+  #lbl-scen-select::before {
+    content:''; width:6px; height:6px; border-radius:50%;
+    background:var(--cyan);
+    box-shadow:0 0 8px var(--cyan);
+    animation: scen-pulse 2s ease-in-out infinite;
+  }
+  @keyframes scen-pulse {
+    0%,100% { opacity:0.5; transform:scale(0.9); }
+    50%     { opacity:1;   transform:scale(1.15); }
+  }
+  #scen-select {
+    background:transparent; color:var(--text);
+    border:none; border-left:1px solid var(--cyan);
+    padding:2px 6px 2px 10px;
+    font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:0.08em;
+    cursor:pointer;
+    text-transform:uppercase;
+  }
+  #scen-select:focus { outline:none; }
+  #scen-select option { background:#13243A; color:var(--text); }
+  .abtn:active:not(:disabled) { transform:scale(0.96); }
+  .abtn:disabled { opacity:0.3; cursor:not-allowed; }
+  .fees-hint {
+    font-size:10px; color:var(--text-dim); font-style:italic;
+    text-align:right; margin-top:2px;
+  }
+
+  /* ============================================================
+     MODALE DE DÉCISION (3 moments-clés du crash)
+  ============================================================ */
+  .modal-backdrop {
+    position:fixed; inset:0; background:rgba(11,18,32,0.78);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    z-index:100;
+    display:none;
+    align-items:center; justify-content:center;
+    padding:20px;
+    animation: mb-in .25s ease-out;
+  }
+  .modal-backdrop.show { display:flex; }
+  @keyframes mb-in { from { opacity:0; } to { opacity:1; } }
+
+  .modal {
+    background:var(--panel);
+    border:1px solid var(--danger);
+    border-radius:6px;
+    padding:24px 26px 22px;
+    width:100%; max-width:520px;
+    position:relative;
+    box-shadow: 0 12px 40px rgba(255,56,100,0.18);
+    animation: m-in .25s ease-out;
+  }
+  @keyframes m-in { from { transform:translateY(12px); opacity:0; } to { transform:none; opacity:1; } }
+
+  .modal-timer-bar {
+    position:absolute; top:0; left:0; right:0; height:3px;
+    background:var(--border); border-radius:6px 6px 0 0; overflow:hidden;
+  }
+  .modal-timer-fill {
+    height:100%; background:var(--danger);
+    width:100%; transform-origin:left;
+    transition: transform 0.1s linear;
+  }
+  .modal-tag {
+    font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.22em;
+    color:var(--danger); text-transform:uppercase; margin-bottom:10px;
+  }
+  .modal-title {
+    font-family:'Orbitron',sans-serif; font-size:22px; line-height:1.2;
+    margin:0 0 12px 0; color:var(--text); text-transform:uppercase;
+  }
+  .modal-body {
+    font-family:'Poppins',sans-serif; font-size:14px; line-height:1.55;
+    color:var(--text-dim); margin:0 0 18px 0;
+  }
+  .modal-stats {
+    display:flex; gap:18px; padding:10px 0; margin-bottom:16px;
+    border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+  }
+  .modal-stats > div { display:flex; flex-direction:column; gap:3px; }
+  .ms-lbl { font-family:'Orbitron',sans-serif; font-size:9px; letter-spacing:0.16em; color:var(--text-dim); text-transform:uppercase; }
+  .ms-val { font-family:'Poppins',sans-serif; font-weight:700; font-size:18px; color:var(--text); }
+
+  .modal-actions { display:flex; flex-direction:column; gap:10px; }
+  .ma-row { display:flex; flex-direction:column; gap:5px; }
+  .ma-label { font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.16em; color:var(--text-dim); text-transform:uppercase; }
+  .ma-btns { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
+  .modal-hold {
+    margin-top:6px;
+    background:transparent; color:var(--text);
+    border:1px solid var(--border); border-radius:3px;
+    padding:10px 0;
+    font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:0.14em;
+    cursor:pointer; transition: all .15s; text-transform:uppercase;
+  }
+  .modal-hold:hover { border-color:var(--chrome); color:var(--chrome); }
+
+  .modal-countdown {
+    position:absolute; top:14px; right:18px;
+    font-family:'Orbitron',sans-serif; font-weight:700;
+    font-size:28px; color:var(--danger);
+    display:flex; align-items:baseline; gap:2px;
+  }
+  .modal-countdown .cd-unit { font-size:12px; color:var(--text-dim); font-weight:500; }
+
+  /* ============================================================
+     DÉBRIEF
+  ============================================================ */
+  .debrief-backdrop {
+    position:fixed; inset:0; background:rgba(11,18,32,0.92);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    z-index:99;
+    display:none; align-items:flex-start; justify-content:center;
+    padding:30px 20px; overflow-y:auto;
+  }
+  .debrief-backdrop.show { display:flex; }
+  .debrief {
+    background:var(--panel);
+    border:1px solid var(--border); border-radius:6px;
+    width:100%; max-width:1100px;
+    padding:24px;
+  }
+  .db-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+  .db-tag { font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:0.22em; color:var(--cyan); text-transform:uppercase; }
+  .db-close {
+    background:transparent; color:var(--text-dim); border:1px solid var(--border);
+    width:32px; height:32px; border-radius:3px; cursor:pointer; font-size:18px;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .db-close:hover { color:var(--cyan); border-color:var(--cyan); }
+
+  .db-grid { display:grid; grid-template-columns: 1fr 1fr; gap:24px; }
+  @media (max-width: 820px) { .db-grid { grid-template-columns: 1fr; } }
+  .db-card-wrap { display:flex; flex-direction:column; gap:10px; }
+  #share-card { width:100%; height:auto; border:1px solid var(--border); border-radius:4px; background:#0B1220; }
+  .db-card-actions { display:flex; gap:8px; }
+
+  .db-details { display:flex; flex-direction:column; gap:18px; }
+  .db-section-label { font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.18em; color:var(--text-dim); text-transform:uppercase; margin-bottom:6px; }
+  .db-bias-name { font-family:'Orbitron',sans-serif; font-size:24px; color:var(--cyan); margin:0 0 8px 0; text-transform:uppercase; line-height:1.15; }
+  .db-bias-desc { font-family:'Poppins',sans-serif; font-size:14px; line-height:1.55; color:var(--text); margin:0; }
+  .db-runstats { display:grid; grid-template-columns: 1fr 1fr; gap:8px 16px; }
+  .db-rs { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dotted var(--border); font-size:13px; }
+  .rs-lbl { color:var(--text-dim); font-family:'Poppins',sans-serif; }
+  .rs-val { color:var(--text); font-family:'Poppins',sans-serif; font-weight:700; }
+  .db-lesson { font-family:'Poppins',sans-serif; font-size:13px; line-height:1.6; color:var(--text); margin:0; padding:10px 12px; background:rgba(45,226,230,0.06); border-left:2px solid var(--cyan); border-radius:0 4px 4px 0; }
+  .db-disclaimer { font-size:11px; color:var(--text-dim); font-style:italic; text-align:center; margin-top:4px; }
+  .time { font-size:14px; color:var(--text-dim); font-family:'Poppins',sans-serif; }
+  .endcard { background:#0F1A2C; border:1px solid var(--danger); border-radius:6px; padding:14px; display:none; }
+  .endcard.show { display:block; }
+  .endcard h3 { font-family:'Orbitron',sans-serif; font-size:12px; letter-spacing:0.16em; color:var(--danger); margin:0 0 8px 0; text-transform:uppercase; }
+  .endcard .final { font-weight:700; font-size:18px; margin-bottom:10px; }
+  button.replay { background:var(--cyan); color:#0B1220; border:none; border-radius:4px; padding:9px 16px; font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:0.14em; cursor:pointer; text-transform:uppercase; font-weight:700; }
+  button.replay:hover { filter:brightness(1.1); }
+  .controls { margin-top:14px; display:flex; gap:14px; align-items:center; font-size:12px; color:var(--text-dim); flex-wrap:wrap; }
+  .controls select { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:3px; padding:4px 8px; font-family:'Poppins',sans-serif; }
+  .hint { font-size:11px; color:var(--text-dim); font-style:italic; }
+  .ctrlbtn { background:transparent; color:var(--cyan); border:1px solid var(--border); border-radius:3px; padding:4px 10px; font-family:'Orbitron',sans-serif; font-size:11px; cursor:pointer; }
+  .ctrlbtn:hover { border-color:var(--cyan); }
+  .ctrlbtn.share-x {
+    background:var(--cyan); color:#0B1220;
+    border-color:var(--cyan);
+    font-weight:700; letter-spacing:0.08em;
+    padding:6px 14px;
+  }
+  .ctrlbtn.share-x:hover { filter:brightness(1.12); }
+  .ctrlbtn.share-x .x-icon {
+    font-family:'Orbitron',sans-serif; font-weight:700;
+    margin-right:2px;
+  }
+  .scrubber { margin-top:12px; display:none; }
+  .scrubber.show { display:block; }
+  .scrubber input[type=range] {
+    width:100%; -webkit-appearance:none; appearance:none; background:transparent; cursor:pointer;
+  }
+  .scrubber input[type=range]::-webkit-slider-runnable-track {
+    height:3px; background:var(--border); border-radius:2px;
+  }
+  .scrubber input[type=range]::-moz-range-track {
+    height:3px; background:var(--border); border-radius:2px;
+  }
+  .scrubber input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none;
+    width:14px; height:14px; border-radius:50%; background:var(--cyan);
+    border:2px solid var(--bg); margin-top:-6px; cursor:grab;
+  }
+  .scrubber input[type=range]::-moz-range-thumb {
+    width:14px; height:14px; border-radius:50%; background:var(--cyan);
+    border:2px solid var(--bg); cursor:grab;
+  }
+  .scrubber-label { font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:0.14em; color:var(--text-dim); margin-top:4px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <div class="title">// DoomSimulator</div>
+  <div class="scenario" id="scenario-label">The Terra/LUNA Collapse — May 2022</div>
+</div>
+<div class="ribbon">
+  <b>VIRTUAL CAPITAL</b> · PEDAGOGICAL SIMULATION · REAL BINANCE DATA · <span class="tick-counter">TICK <span id="tick-now">0</span> / <span id="tick-total">385</span></span>
+</div>
+
+<div class="layout">
+  <div class="panel" id="chart-panel">
+    <button class="fs-btn" id="fs-btn" title="Toggle fullscreen" aria-label="Toggle fullscreen">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
+        <path class="fs-icon-expand" d="M1.5 5 V1.5 H5 M9 1.5 H12.5 V5 M12.5 9 V12.5 H9 M5 12.5 H1.5 V9"/>
+      </svg>
+    </button>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+      <div class="tooltip" id="tooltip" aria-hidden="true"></div>
+      <!-- Overlay de démarrage (avant clic PLAY) -->
+      <div class="play-overlay" id="play-overlay">
+        <div class="play-overlay-tag" id="play-overlay-tag">// MISSION BRIEFING</div>
+        <div class="play-overlay-title" id="play-overlay-title">Survive the crash. Read the signals. Trust your eyes.</div>
+        <div class="play-overlay-sub" id="play-overlay-sub">Pick your scenario above, then engage.</div>
+        <button class="play-btn" id="play-btn">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M3 1 L16 9 L3 17 Z"/></svg>
+          <span id="play-btn-label">ENGAGE</span>
+        </button>
+      </div>
+    </div>
+    <div class="controls">
+      <label id="lbl-scen-select">Scenario:
+        <select id="scen-select">
+          <option value="luna">Terra/LUNA — May 2022</option>
+          <option value="sol">FTX/SOL — Nov 2022</option>
+        </select>
+      </label>
+      <label>Lang:
+        <select id="lang">
+          <option value="en">EN</option>
+          <option value="fr">FR</option>
+        </select>
+      </label>
+      <span class="hint" id="zoom-hint">Scroll / pinch to zoom · drag to pan when finished</span>
+      <button class="ctrlbtn" id="reset-view" title="Reset view">⤢</button>
+    </div>
+    <div class="scrubber" id="scrubber-wrap">
+      <input type="range" id="scrubber" min="0" max="100" value="100" step="1">
+      <div class="scrubber-label" id="scrubber-label">Explore the timeline</div>
+    </div>
+  </div>
+
+  <div class="panel stats">
+    <div class="stat">
+      <label id="lbl-price">LUNA PRICE</label>
+      <div class="value" id="price">$88.93</div>
+    </div>
+    <div class="stat">
+      <label id="lbl-portfolio">PORTFOLIO VALUE</label>
+      <div class="value" id="portfolio">$1,000.00</div>
+    </div>
+    <div class="stat">
+      <label id="lbl-change">CHANGE</label>
+      <div class="value" id="change">0.00%</div>
+    </div>
+    <div class="holdings">
+      <div class="stat-mini">
+        <label id="lbl-holdings">LUNA HOLDINGS</label>
+        <div class="value-mini" id="holdings">5.6224 <span class="unit">LUNA</span></div>
+      </div>
+      <div class="stat-mini">
+        <label id="lbl-cash">CASH</label>
+        <div class="value-mini" id="cash">$500.00</div>
+      </div>
+    </div>
+    <div class="actions" id="actions">
+      <div class="action-row">
+        <div class="action-label" id="lbl-buy">BUY · with cash</div>
+        <div class="action-btns">
+          <button class="abtn buy" data-action="buy" data-pct="25">25%</button>
+          <button class="abtn buy" data-action="buy" data-pct="50">50%</button>
+          <button class="abtn buy" data-action="buy" data-pct="75">75%</button>
+          <button class="abtn buy" data-action="buy" data-pct="100">100%</button>
+        </div>
+      </div>
+      <div class="action-row">
+        <div class="action-label" id="lbl-sell">SELL · of LUNA</div>
+        <div class="action-btns">
+          <button class="abtn sell" data-action="sell" data-pct="25">25%</button>
+          <button class="abtn sell" data-action="sell" data-pct="50">50%</button>
+          <button class="abtn sell" data-action="sell" data-pct="75">75%</button>
+          <button class="abtn sell" data-action="sell" data-pct="100">100%</button>
+        </div>
+      </div>
+      <div class="action-row">
+        <div class="action-label" id="lbl-analyze">ANALYZE · DoomScan signal</div>
+        <div class="action-btns single">
+          <button class="abtn analyze" id="analyze-btn" data-action="analyze">RUN ANALYSIS <span class="analyze-uses" id="analyze-uses">(3 left)</span></button>
+        </div>
+      </div>
+      <div class="fees-hint" id="fees-hint">Fee: 0.3% per trade</div>
+    </div>
+    <div class="psy-meters">
+      <div class="psy-meters-title" id="lbl-psy">PSYCHOLOGICAL STATE</div>
+      <div class="psy-row">
+        <div class="psy-label"><span id="lbl-stress">Stress</span><span class="psy-val" id="stress-val">0%</span></div>
+        <div class="psy-bar"><i class="psy-fill psy-fill-stress" id="stress-fill"></i></div>
+      </div>
+      <div class="psy-row">
+        <div class="psy-label"><span id="lbl-impulse">Impulsivity</span><span class="psy-val" id="impulse-val">0%</span></div>
+        <div class="psy-bar"><i class="psy-fill psy-fill-impulse" id="impulse-fill"></i></div>
+      </div>
+      <div class="psy-row">
+        <div class="psy-label"><span id="lbl-illusion">Illusion</span><span class="psy-val" id="illusion-val">0%</span></div>
+        <div class="psy-bar"><i class="psy-fill psy-fill-illusion" id="illusion-fill"></i></div>
+      </div>
+      <div class="psy-row">
+        <div class="psy-label"><span id="lbl-lucidity">Lucidity</span><span class="psy-val" id="lucidity-val">100%</span></div>
+        <div class="psy-bar"><i class="psy-fill psy-fill-lucidity" id="lucidity-fill" style="width:100%"></i></div>
+      </div>
+    </div>
+    <div class="stat">
+      <label id="lbl-time">ELAPSED</label>
+      <div class="time" id="elapsed">Day 1 · Apr 27, 2022</div>
+    </div>
+    <div class="endcard" id="endcard">
+      <h3 id="lbl-end">SIMULATION COMPLETE</h3>
+      <div class="final" id="final-line">Final capital: $0.00</div>
+      <button class="replay" id="replay">↻ Replay</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     MODALE DE DÉCISION (apparait aux 3 moments-clés du crash)
+============================================================ -->
+<div class="modal-backdrop" id="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-labelledby="modal-title">
+    <div class="modal-timer-bar"><div class="modal-timer-fill" id="modal-timer-fill"></div></div>
+    <div class="modal-tag" id="modal-tag">CRITICAL EVENT</div>
+    <h2 id="modal-title" class="modal-title">An event title</h2>
+    <p id="modal-body" class="modal-body">Context explaining what is happening in the market.</p>
+    <div class="modal-stats">
+      <div><span class="ms-lbl" id="ms-lbl-price">Price</span><span class="ms-val" id="ms-price">$0</span></div>
+      <div><span class="ms-lbl" id="ms-lbl-port">Portfolio</span><span class="ms-val" id="ms-port">$0</span></div>
+    </div>
+    <div class="modal-actions">
+      <div class="ma-row">
+        <div class="ma-label" id="ma-buy-label">BUY</div>
+        <div class="ma-btns">
+          <button class="abtn buy modal-act" data-action="buy" data-pct="25">25%</button>
+          <button class="abtn buy modal-act" data-action="buy" data-pct="50">50%</button>
+          <button class="abtn buy modal-act" data-action="buy" data-pct="100">100%</button>
+        </div>
+      </div>
+      <div class="ma-row">
+        <div class="ma-label" id="ma-sell-label">SELL</div>
+        <div class="ma-btns">
+          <button class="abtn sell modal-act" data-action="sell" data-pct="25">25%</button>
+          <button class="abtn sell modal-act" data-action="sell" data-pct="50">50%</button>
+          <button class="abtn sell modal-act" data-action="sell" data-pct="100">100%</button>
+        </div>
+      </div>
+      <button class="modal-hold" id="modal-hold">HOLD · do nothing</button>
+    </div>
+    <div class="modal-countdown"><span id="modal-countdown">10</span><span class="cd-unit">s</span></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     DÉBRIEF DE FIN DE PARTIE (Bloc 4 + Bloc 5 : biais + carte partageable)
+============================================================ -->
+<div class="debrief-backdrop" id="debrief-backdrop" aria-hidden="true">
+  <div class="debrief">
+    <div class="db-header">
+      <div class="db-tag" id="db-tag">DEBRIEF</div>
+      <button class="db-close" id="db-close" title="Close" aria-label="Close">×</button>
+    </div>
+
+    <div class="db-grid">
+      <!-- Colonne gauche : carte partageable -->
+      <div class="db-card-wrap">
+        <canvas id="share-card" width="1080" height="1080"></canvas>
+        <div class="db-card-actions">
+          <button class="ctrlbtn share-x" id="db-share-x"><span class="x-icon">𝕏</span> <span id="db-share-x-lbl">Share on X</span></button>
+          <button class="ctrlbtn" id="db-download">⬇ <span id="db-download-lbl">Download card</span></button>
+          <button class="ctrlbtn" id="db-export-txt">⬇ <span id="db-export-txt-lbl">Export report</span></button>
+        </div>
+      </div>
+      <!-- Colonne droite : explication du biais + détails -->
+      <div class="db-details">
+        <div class="db-section">
+          <div class="db-section-label" id="db-bias-lbl">YOUR DOMINANT BIAS</div>
+          <h2 class="db-bias-name" id="db-bias-name">—</h2>
+          <p class="db-bias-desc" id="db-bias-desc">—</p>
+        </div>
+        <div class="db-section">
+          <div class="db-section-label" id="db-stats-lbl">YOUR RUN</div>
+          <div class="db-runstats">
+            <div class="db-rs"><span class="rs-lbl" id="rs-lbl-final">Final capital</span><span class="rs-val" id="rs-final">$0</span></div>
+            <div class="db-rs"><span class="rs-lbl" id="rs-lbl-pnl">P&amp;L</span><span class="rs-val" id="rs-pnl">0%</span></div>
+            <div class="db-rs"><span class="rs-lbl" id="rs-lbl-trades">Trades</span><span class="rs-val" id="rs-trades">0</span></div>
+            <div class="db-rs"><span class="rs-lbl" id="rs-lbl-fees">Fees paid</span><span class="rs-val" id="rs-fees">$0</span></div>
+            <div class="db-rs"><span class="rs-lbl" id="rs-lbl-rank">Survival rank</span><span class="rs-val" id="rs-rank">—</span></div>
+          </div>
+        </div>
+        <div class="db-section">
+          <div class="db-section-label" id="db-lesson-lbl">THE LESSON</div>
+          <p class="db-lesson" id="db-lesson">—</p>
+        </div>
+        <div class="db-disclaimer" id="db-disclaimer">Virtual capital · pedagogical simulation · no investment advice.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.LUNA_CANDLES = [{"t":1651017600000,"o":88.43,"h":89.17,"l":88.12,"c":88.93},{"t":1651021200000,"o":88.91,"h":89.29,"l":88.74,"c":88.97},{"t":1651024800000,"o":88.98,"h":89.02,"l":88.43,"c":88.71},{"t":1651028400000,"o":88.7,"h":88.76,"l":87.51,"c":87.68},{"t":1651032000000,"o":87.68,"h":88.4,"l":87.5,"c":87.93},{"t":1651035600000,"o":87.94,"h":88.82,"l":87.84,"c":88.26},{"t":1651039200000,"o":88.28,"h":89.53,"l":88.08,"c":89.41},{"t":1651042800000,"o":89.41,"h":90.5,"l":89.41,"c":90.5},{"t":1651046400000,"o":90.5,"h":90.64,"l":88.43,"c":89.17},{"t":1651050000000,"o":89.17,"h":89.79,"l":88.91,"c":89.57},{"t":1651053600000,"o":89.57,"h":89.64,"l":89.0,"c":89.39},{"t":1651057200000,"o":89.39,"h":89.41,"l":87.91,"c":88.82},{"t":1651060800000,"o":88.83,"h":89.15,"l":88.32,"c":88.42},{"t":1651064400000,"o":88.42,"h":90.64,"l":88.42,"c":89.99},{"t":1651068000000,"o":90.0,"h":90.14,"l":88.16,"c":88.52},{"t":1651071600000,"o":88.51,"h":89.17,"l":88.29,"c":88.95},{"t":1651075200000,"o":88.97,"h":89.58,"l":88.78,"c":89.34},{"t":1651078800000,"o":89.35,"h":89.5,"l":88.68,"c":89.0},{"t":1651082400000,"o":89.01,"h":89.41,"l":88.64,"c":88.72},{"t":1651086000000,"o":88.67,"h":88.78,"l":88.03,"c":88.33},{"t":1651089600000,"o":88.32,"h":89.32,"l":88.27,"c":88.84},{"t":1651093200000,"o":88.84,"h":89.49,"l":88.73,"c":89.04},{"t":1651096800000,"o":89.04,"h":89.2,"l":88.6,"c":88.63},{"t":1651100400000,"o":88.61,"h":89.22,"l":88.53,"c":89.03},{"t":1651104000000,"o":89.02,"h":90.3,"l":88.83,"c":89.79},{"t":1651107600000,"o":89.8,"h":90.47,"l":89.38,"c":89.54},{"t":1651111200000,"o":89.53,"h":90.48,"l":89.46,"c":90.31},{"t":1651114800000,"o":90.31,"h":90.52,"l":89.9,"c":90.05},{"t":1651118400000,"o":90.06,"h":90.12,"l":89.61,"c":89.61},{"t":1651122000000,"o":89.63,"h":89.8,"l":88.97,"c":89.2},{"t":1651125600000,"o":89.2,"h":89.81,"l":89.13,"c":89.53},{"t":1651129200000,"o":89.54,"h":90.07,"l":89.25,"c":89.45},{"t":1651132800000,"o":89.45,"h":90.53,"l":89.27,"c":89.98},{"t":1651136400000,"o":89.98,"h":92.17,"l":89.93,"c":91.78},{"t":1651140000000,"o":91.79,"h":92.46,"l":90.95,"c":91.66},{"t":1651143600000,"o":91.65,"h":91.99,"l":91.14,"c":91.17},{"t":1651147200000,"o":91.17,"h":91.92,"l":90.65,"c":91.32},{"t":1651150800000,"o":91.31,"h":91.36,"l":89.29,"c":89.37},{"t":1651154400000,"o":89.37,"h":89.37,"l":87.95,"c":88.75},{"t":1651158000000,"o":88.76,"h":90.85,"l":87.7,"c":88.0},{"t":1651161600000,"o":87.99,"h":88.81,"l":87.06,"c":88.07},{"t":1651165200000,"o":88.11,"h":89.96,"l":87.74,"c":89.72},{"t":1651168800000,"o":89.72,"h":90.17,"l":88.8,"c":88.95},{"t":1651172400000,"o":88.95,"h":89.58,"l":88.26,"c":88.54},{"t":1651176000000,"o":88.54,"h":89.35,"l":87.65,"c":88.99},{"t":1651179600000,"o":88.98,"h":89.13,"l":88.13,"c":88.7},{"t":1651183200000,"o":88.7,"h":88.9,"l":88.28,"c":88.64},{"t":1651186800000,"o":88.64,"h":89.15,"l":88.31,"c":89.14},{"t":1651190400000,"o":89.13,"h":89.73,"l":88.79,"c":89.41},{"t":1651194000000,"o":89.42,"h":89.6,"l":88.84,"c":88.9},{"t":1651197600000,"o":88.9,"h":89.11,"l":87.28,"c":87.52},{"t":1651201200000,"o":87.52,"h":87.76,"l":85.77,"c":86.21},{"t":1651204800000,"o":86.21,"h":86.23,"l":85.03,"c":85.55},{"t":1651208400000,"o":85.57,"h":86.04,"l":85.39,"c":85.79},{"t":1651212000000,"o":85.8,"h":86.69,"l":85.35,"c":86.57},{"t":1651215600000,"o":86.57,"h":87.28,"l":86.36,"c":87.0},{"t":1651219200000,"o":86.98,"h":87.2,"l":86.12,"c":86.2},{"t":1651222800000,"o":86.18,"h":86.7,"l":85.79,"c":86.13},{"t":1651226400000,"o":86.12,"h":86.73,"l":85.02,"c":85.59},{"t":1651230000000,"o":85.58,"h":85.9,"l":84.78,"c":85.79},{"t":1651233600000,"o":85.79,"h":87.0,"l":85.57,"c":86.45},{"t":1651237200000,"o":86.44,"h":87.62,"l":86.07,"c":87.1},{"t":1651240800000,"o":87.11,"h":88.23,"l":86.11,"c":88.13},{"t":1651244400000,"o":88.11,"h":88.45,"l":86.98,"c":87.39},{"t":1651248000000,"o":87.38,"h":87.55,"l":85.84,"c":86.13},{"t":1651251600000,"o":86.13,"h":86.4,"l":85.32,"c":85.74},{"t":1651255200000,"o":85.74,"h":85.79,"l":84.11,"c":84.88},{"t":1651258800000,"o":84.85,"h":85.33,"l":84.1,"c":85.01},{"t":1651262400000,"o":85.0,"h":86.03,"l":84.94,"c":85.69},{"t":1651266000000,"o":85.69,"h":85.75,"l":84.76,"c":85.07},{"t":1651269600000,"o":85.07,"h":85.45,"l":84.69,"c":85.38},{"t":1651273200000,"o":85.37,"h":85.41,"l":84.63,"c":85.08},{"t":1651276800000,"o":85.08,"h":85.78,"l":84.93,"c":85.69},{"t":1651280400000,"o":85.7,"h":86.33,"l":85.56,"c":85.96},{"t":1651284000000,"o":85.98,"h":86.32,"l":85.15,"c":85.52},{"t":1651287600000,"o":85.55,"h":85.55,"l":84.58,"c":85.05},{"t":1651291200000,"o":85.06,"h":85.36,"l":84.76,"c":85.36},{"t":1651294800000,"o":85.36,"h":85.77,"l":85.13,"c":85.57},{"t":1651298400000,"o":85.57,"h":85.99,"l":85.5,"c":85.63},{"t":1651302000000,"o":85.64,"h":85.74,"l":84.96,"c":85.04},{"t":1651305600000,"o":85.04,"h":85.17,"l":84.33,"c":84.5},{"t":1651309200000,"o":84.5,"h":84.52,"l":83.44,"c":83.85},{"t":1651312800000,"o":83.84,"h":84.42,"l":83.57,"c":83.94},{"t":1651316400000,"o":83.95,"h":84.55,"l":83.92,"c":84.0},{"t":1651320000000,"o":84.01,"h":84.42,"l":83.58,"c":83.67},{"t":1651323600000,"o":83.66,"h":83.86,"l":81.75,"c":82.23},{"t":1651327200000,"o":82.2,"h":82.85,"l":81.03,"c":81.2},{"t":1651330800000,"o":81.21,"h":82.19,"l":80.62,"c":81.58},{"t":1651334400000,"o":81.58,"h":81.68,"l":80.37,"c":80.49},{"t":1651338000000,"o":80.49,"h":80.52,"l":79.49,"c":80.13},{"t":1651341600000,"o":80.13,"h":81.61,"l":80.04,"c":81.34},{"t":1651345200000,"o":81.34,"h":81.5,"l":80.53,"c":81.19},{"t":1651348800000,"o":81.18,"h":81.35,"l":80.46,"c":80.63},{"t":1651352400000,"o":80.64,"h":81.02,"l":80.18,"c":80.4},{"t":1651356000000,"o":80.39,"h":80.39,"l":78.32,"c":78.37},{"t":1651359600000,"o":78.36,"h":78.93,"l":76.55,"c":78.09},{"t":1651363200000,"o":78.1,"h":78.92,"l":77.71,"c":78.3},{"t":1651366800000,"o":78.3,"h":79.25,"l":76.49,"c":78.67},{"t":1651370400000,"o":78.67,"h":79.14,"l":78.26,"c":78.37},{"t":1651374000000,"o":78.38,"h":79.63,"l":78.38,"c":79.36},{"t":1651377600000,"o":79.37,"h":79.49,"l":78.93,"c":79.46},{"t":1651381200000,"o":79.47,"h":80.37,"l":79.24,"c":80.24},{"t":1651384800000,"o":80.25,"h":80.69,"l":80.05,"c":80.29},{"t":1651388400000,"o":80.3,"h":80.61,"l":79.7,"c":79.98},{"t":1651392000000,"o":79.98,"h":81.17,"l":79.92,"c":81.01},{"t":1651395600000,"o":81.01,"h":81.43,"l":80.36,"c":80.67},{"t":1651399200000,"o":80.66,"h":80.73,"l":79.55,"c":79.77},{"t":1651402800000,"o":79.77,"h":80.02,"l":79.13,"c":79.14},{"t":1651406400000,"o":79.14,"h":80.43,"l":78.63,"c":80.38},{"t":1651410000000,"o":80.39,"h":80.67,"l":79.77,"c":79.95},{"t":1651413600000,"o":79.95,"h":80.17,"l":79.32,"c":79.36},{"t":1651417200000,"o":79.36,"h":81.26,"l":79.29,"c":81.1},{"t":1651420800000,"o":81.11,"h":82.57,"l":80.82,"c":82.02},{"t":1651424400000,"o":82.03,"h":82.67,"l":81.64,"c":81.86},{"t":1651428000000,"o":81.85,"h":81.96,"l":80.63,"c":80.64},{"t":1651431600000,"o":80.66,"h":80.83,"l":79.33,"c":79.98},{"t":1651435200000,"o":79.98,"h":81.39,"l":79.74,"c":81.31},{"t":1651438800000,"o":81.31,"h":81.62,"l":80.38,"c":81.26},{"t":1651442400000,"o":81.26,"h":81.94,"l":81.07,"c":81.79},{"t":1651446000000,"o":81.79,"h":82.56,"l":81.5,"c":82.23},{"t":1651449600000,"o":82.21,"h":83.69,"l":82.14,"c":83.68},{"t":1651453200000,"o":83.68,"h":83.96,"l":82.79,"c":82.97},{"t":1651456800000,"o":82.98,"h":83.09,"l":82.19,"c":82.8},{"t":1651460400000,"o":82.81,"h":83.21,"l":82.63,"c":82.83},{"t":1651464000000,"o":82.82,"h":83.37,"l":82.29,"c":83.23},{"t":1651467600000,"o":83.21,"h":83.57,"l":82.68,"c":83.51},{"t":1651471200000,"o":83.51,"h":83.91,"l":82.74,"c":82.77},{"t":1651474800000,"o":82.78,"h":83.44,"l":82.42,"c":82.47},{"t":1651478400000,"o":82.47,"h":83.21,"l":82.08,"c":82.88},{"t":1651482000000,"o":82.88,"h":83.26,"l":82.44,"c":82.58},{"t":1651485600000,"o":82.58,"h":82.87,"l":81.87,"c":82.36},{"t":1651489200000,"o":82.36,"h":83.58,"l":82.27,"c":82.81},{"t":1651492800000,"o":82.8,"h":84.4,"l":82.64,"c":83.82},{"t":1651496400000,"o":83.8,"h":85.62,"l":83.23,"c":84.57},{"t":1651500000000,"o":84.56,"h":84.8,"l":83.32,"c":83.96},{"t":1651503600000,"o":83.97,"h":84.21,"l":82.75,"c":83.24},{"t":1651507200000,"o":83.25,"h":83.94,"l":82.76,"c":83.06},{"t":1651510800000,"o":83.06,"h":83.08,"l":81.61,"c":81.99},{"t":1651514400000,"o":81.98,"h":82.34,"l":80.49,"c":81.27},{"t":1651518000000,"o":81.28,"h":82.73,"l":80.97,"c":82.55},{"t":1651521600000,"o":82.56,"h":83.51,"l":82.54,"c":82.95},{"t":1651525200000,"o":82.96,"h":84.46,"l":82.7,"c":84.2},{"t":1651528800000,"o":84.22,"h":84.83,"l":84.09,"c":84.3},{"t":1651532400000,"o":84.33,"h":84.8,"l":84.2,"c":84.27},{"t":1651536000000,"o":84.25,"h":84.5,"l":83.96,"c":84.05},{"t":1651539600000,"o":84.06,"h":85.88,"l":83.8,"c":85.05},{"t":1651543200000,"o":85.06,"h":85.34,"l":84.17,"c":84.86},{"t":1651546800000,"o":84.86,"h":85.4,"l":84.67,"c":84.89},{"t":1651550400000,"o":84.89,"h":85.08,"l":84.33,"c":84.64},{"t":1651554000000,"o":84.63,"h":84.72,"l":83.83,"c":84.63},{"t":1651557600000,"o":84.63,"h":85.09,"l":84.28,"c":84.94},{"t":1651561200000,"o":84.93,"h":85.28,"l":84.44,"c":85.18},{"t":1651564800000,"o":85.17,"h":85.57,"l":84.88,"c":84.95},{"t":1651568400000,"o":84.94,"h":85.3,"l":83.98,"c":84.16},{"t":1651572000000,"o":84.16,"h":84.59,"l":83.97,"c":84.21},{"t":1651575600000,"o":84.21,"h":85.18,"l":83.88,"c":85.16},{"t":1651579200000,"o":85.17,"h":85.27,"l":84.4,"c":84.4},{"t":1651582800000,"o":84.41,"h":84.54,"l":83.11,"c":83.59},{"t":1651586400000,"o":83.61,"h":84.14,"l":83.17,"c":83.44},{"t":1651590000000,"o":83.42,"h":84.09,"l":83.13,"c":83.89},{"t":1651593600000,"o":83.89,"h":84.11,"l":83.12,"c":83.24},{"t":1651597200000,"o":83.25,"h":83.91,"l":83.08,"c":83.59},{"t":1651600800000,"o":83.55,"h":83.55,"l":82.47,"c":82.85},{"t":1651604400000,"o":82.87,"h":82.87,"l":81.82,"c":82.23},{"t":1651608000000,"o":82.24,"h":82.26,"l":81.21,"c":81.89},{"t":1651611600000,"o":81.88,"h":82.41,"l":81.47,"c":82.19},{"t":1651615200000,"o":82.2,"h":83.0,"l":82.09,"c":82.69},{"t":1651618800000,"o":82.69,"h":82.93,"l":82.32,"c":82.5},{"t":1651622400000,"o":82.5,"h":82.71,"l":82.04,"c":82.49},{"t":1651626000000,"o":82.49,"h":82.63,"l":82.33,"c":82.41},{"t":1651629600000,"o":82.41,"h":83.23,"l":82.39,"c":82.79},{"t":1651633200000,"o":82.79,"h":83.59,"l":82.71,"c":83.43},{"t":1651636800000,"o":83.44,"h":83.78,"l":83.02,"c":83.21},{"t":1651640400000,"o":83.21,"h":83.66,"l":83.02,"c":83.55},{"t":1651644000000,"o":83.55,"h":84.68,"l":83.53,"c":84.5},{"t":1651647600000,"o":84.51,"h":85.2,"l":84.14,"c":84.96},{"t":1651651200000,"o":84.97,"h":86.88,"l":84.96,"c":86.6},{"t":1651654800000,"o":86.6,"h":86.69,"l":85.96,"c":86.2},{"t":1651658400000,"o":86.18,"h":87.36,"l":86.12,"c":86.93},{"t":1651662000000,"o":86.94,"h":87.27,"l":86.45,"c":87.05},{"t":1651665600000,"o":87.05,"h":87.4,"l":85.28,"c":85.28},{"t":1651669200000,"o":85.27,"h":85.9,"l":84.2,"c":84.22},{"t":1651672800000,"o":84.23,"h":84.86,"l":83.89,"c":83.99},{"t":1651676400000,"o":83.98,"h":84.4,"l":83.28,"c":83.75},{"t":1651680000000,"o":83.74,"h":85.0,"l":83.58,"c":84.53},{"t":1651683600000,"o":84.54,"h":84.6,"l":83.55,"c":83.93},{"t":1651687200000,"o":83.93,"h":87.51,"l":82.8,"c":86.6},{"t":1651690800000,"o":86.61,"h":88.35,"l":86.28,"c":87.71},{"t":1651694400000,"o":87.7,"h":87.83,"l":86.58,"c":86.95},{"t":1651698000000,"o":86.95,"h":86.96,"l":86.1,"c":86.25},{"t":1651701600000,"o":86.26,"h":86.51,"l":85.65,"c":86.12},{"t":1651705200000,"o":86.13,"h":86.64,"l":85.71,"c":86.18},{"t":1651708800000,"o":86.18,"h":86.57,"l":85.81,"c":86.03},{"t":1651712400000,"o":86.04,"h":87.28,"l":86.03,"c":87.21},{"t":1651716000000,"o":87.2,"h":87.87,"l":86.76,"c":87.23},{"t":1651719600000,"o":87.22,"h":87.4,"l":86.75,"c":86.89},{"t":1651723200000,"o":86.9,"h":87.35,"l":86.45,"c":86.97},{"t":1651726800000,"o":86.97,"h":87.49,"l":85.95,"c":86.11},{"t":1651730400000,"o":86.11,"h":86.82,"l":85.76,"c":85.86},{"t":1651734000000,"o":85.87,"h":86.26,"l":85.36,"c":86.21},{"t":1651737600000,"o":86.2,"h":86.41,"l":84.98,"c":85.41},{"t":1651741200000,"o":85.4,"h":85.64,"l":84.79,"c":85.25},{"t":1651744800000,"o":85.26,"h":86.11,"l":85.1,"c":85.52},{"t":1651748400000,"o":85.53,"h":86.12,"l":85.09,"c":85.23},{"t":1651752000000,"o":85.24,"h":85.77,"l":85.03,"c":85.61},{"t":1651755600000,"o":85.62,"h":85.64,"l":83.77,"c":83.88},{"t":1651759200000,"o":83.87,"h":84.19,"l":81.69,"c":81.97},{"t":1651762800000,"o":81.96,"h":82.15,"l":78.8,"c":79.83},{"t":1651766400000,"o":79.84,"h":81.79,"l":79.5,"c":81.34},{"t":1651770000000,"o":81.37,"h":81.82,"l":80.44,"c":80.44},{"t":1651773600000,"o":80.44,"h":80.67,"l":78.51,"c":80.34},{"t":1651777200000,"o":80.33,"h":81.61,"l":79.06,"c":81.45},{"t":1651780800000,"o":81.45,"h":82.0,"l":80.71,"c":81.96},{"t":1651784400000,"o":81.96,"h":82.78,"l":81.5,"c":82.62},{"t":1651788000000,"o":82.63,"h":83.6,"l":82.23,"c":82.33},{"t":1651791600000,"o":82.34,"h":83.02,"l":82.18,"c":82.35},{"t":1651795200000,"o":82.34,"h":83.05,"l":81.21,"c":81.77},{"t":1651798800000,"o":81.76,"h":82.1,"l":80.84,"c":80.91},{"t":1651802400000,"o":80.91,"h":81.58,"l":80.79,"c":81.1},{"t":1651806000000,"o":81.11,"h":81.19,"l":80.45,"c":80.99},{"t":1651809600000,"o":80.99,"h":80.99,"l":80.17,"c":80.54},{"t":1651813200000,"o":80.54,"h":81.46,"l":80.37,"c":80.9},{"t":1651816800000,"o":80.9,"h":81.17,"l":80.43,"c":80.45},{"t":1651820400000,"o":80.46,"h":80.7,"l":79.06,"c":80.35},{"t":1651824000000,"o":80.34,"h":81.07,"l":79.51,"c":79.67},{"t":1651827600000,"o":79.66,"h":80.99,"l":79.58,"c":80.87},{"t":1651831200000,"o":80.87,"h":81.49,"l":79.73,"c":80.09},{"t":1651834800000,"o":80.06,"h":80.55,"l":78.95,"c":79.84},{"t":1651838400000,"o":79.84,"h":81.0,"l":79.73,"c":80.12},{"t":1651842000000,"o":80.11,"h":80.46,"l":77.47,"c":78.3},{"t":1651845600000,"o":78.3,"h":80.42,"l":78.01,"c":80.16},{"t":1651849200000,"o":80.16,"h":81.73,"l":79.86,"c":80.02},{"t":1651852800000,"o":80.02,"h":80.68,"l":79.64,"c":80.65},{"t":1651856400000,"o":80.66,"h":80.71,"l":79.75,"c":79.97},{"t":1651860000000,"o":79.97,"h":80.04,"l":79.1,"c":79.59},{"t":1651863600000,"o":79.59,"h":80.14,"l":79.18,"c":79.42},{"t":1651867200000,"o":79.42,"h":79.59,"l":78.71,"c":79.32},{"t":1651870800000,"o":79.32,"h":79.43,"l":78.45,"c":78.72},{"t":1651874400000,"o":78.72,"h":78.86,"l":78.0,"c":78.52},{"t":1651878000000,"o":78.52,"h":78.62,"l":77.22,"c":77.3},{"t":1651881600000,"o":77.3,"h":77.5,"l":76.63,"c":76.76},{"t":1651885200000,"o":76.75,"h":77.23,"l":75.96,"c":76.41},{"t":1651888800000,"o":76.42,"h":76.95,"l":76.32,"c":76.47},{"t":1651892400000,"o":76.46,"h":76.68,"l":75.17,"c":75.48},{"t":1651896000000,"o":75.49,"h":75.57,"l":72.76,"c":72.83},{"t":1651899600000,"o":72.86,"h":73.82,"l":72.61,"c":73.64},{"t":1651903200000,"o":73.64,"h":73.77,"l":72.14,"c":72.27},{"t":1651906800000,"o":72.25,"h":73.29,"l":72.08,"c":73.09},{"t":1651910400000,"o":73.1,"h":73.77,"l":72.81,"c":73.47},{"t":1651914000000,"o":73.47,"h":73.81,"l":73.02,"c":73.29},{"t":1651917600000,"o":73.29,"h":74.19,"l":73.08,"c":73.88},{"t":1651921200000,"o":73.88,"h":74.42,"l":73.46,"c":73.86},{"t":1651924800000,"o":73.85,"h":73.94,"l":73.21,"c":73.48},{"t":1651928400000,"o":73.48,"h":73.63,"l":72.55,"c":73.05},{"t":1651932000000,"o":73.05,"h":73.47,"l":72.82,"c":73.07},{"t":1651935600000,"o":73.08,"h":73.61,"l":72.98,"c":73.44},{"t":1651939200000,"o":73.44,"h":73.59,"l":72.67,"c":73.23},{"t":1651942800000,"o":73.22,"h":73.25,"l":72.48,"c":72.57},{"t":1651946400000,"o":72.57,"h":73.16,"l":72.1,"c":72.64},{"t":1651950000000,"o":72.63,"h":72.88,"l":72.35,"c":72.41},{"t":1651953600000,"o":72.4,"h":72.44,"l":70.39,"c":70.65},{"t":1651957200000,"o":70.65,"h":70.74,"l":66.25,"c":66.33},{"t":1651960800000,"o":66.33,"h":68.47,"l":63.25,"c":65.28},{"t":1651964400000,"o":65.26,"h":70.72,"l":64.87,"c":68.13},{"t":1651968000000,"o":68.13,"h":68.54,"l":65.4,"c":65.63},{"t":1651971600000,"o":65.63,"h":66.22,"l":63.22,"c":63.73},{"t":1651975200000,"o":63.73,"h":65.29,"l":61.69,"c":65.1},{"t":1651978800000,"o":65.1,"h":66.14,"l":63.89,"c":65.62},{"t":1651982400000,"o":65.62,"h":66.5,"l":64.85,"c":65.15},{"t":1651986000000,"o":65.15,"h":65.69,"l":64.78,"c":65.03},{"t":1651989600000,"o":65.03,"h":65.51,"l":64.31,"c":65.1},{"t":1651993200000,"o":65.1,"h":65.4,"l":64.11,"c":64.11},{"t":1651996800000,"o":64.11,"h":64.75,"l":63.64,"c":63.98},{"t":1652000400000,"o":63.99,"h":64.26,"l":62.46,"c":62.74},{"t":1652004000000,"o":62.73,"h":64.22,"l":62.57,"c":63.63},{"t":1652007600000,"o":63.65,"h":64.37,"l":62.76,"c":63.25},{"t":1652011200000,"o":63.24,"h":63.65,"l":60.02,"c":60.15},{"t":1652014800000,"o":60.16,"h":62.42,"l":59.4,"c":60.72},{"t":1652018400000,"o":60.73,"h":65.28,"l":60.39,"c":64.64},{"t":1652022000000,"o":64.62,"h":66.64,"l":64.33,"c":64.82},{"t":1652025600000,"o":64.82,"h":66.73,"l":64.64,"c":64.7},{"t":1652029200000,"o":64.71,"h":66.11,"l":62.61,"c":66.08},{"t":1652032800000,"o":66.09,"h":67.89,"l":64.86,"c":67.04},{"t":1652036400000,"o":67.02,"h":67.27,"l":66.1,"c":66.39},{"t":1652040000000,"o":66.38,"h":66.62,"l":65.34,"c":65.73},{"t":1652043600000,"o":65.74,"h":66.82,"l":65.74,"c":66.81},{"t":1652047200000,"o":66.81,"h":66.9,"l":64.72,"c":64.91},{"t":1652050800000,"o":64.9,"h":64.98,"l":63.42,"c":64.26},{"t":1652054400000,"o":64.27,"h":65.29,"l":63.42,"c":64.35},{"t":1652058000000,"o":64.35,"h":64.56,"l":62.52,"c":62.6},{"t":1652061600000,"o":62.6,"h":62.69,"l":60.0,"c":60.8},{"t":1652065200000,"o":60.79,"h":61.98,"l":60.42,"c":61.16},{"t":1652068800000,"o":61.18,"h":63.97,"l":61.18,"c":62.8},{"t":1652072400000,"o":62.81,"h":63.29,"l":61.42,"c":61.55},{"t":1652076000000,"o":61.56,"h":62.24,"l":60.67,"c":61.87},{"t":1652079600000,"o":61.87,"h":62.58,"l":60.0,"c":60.85},{"t":1652083200000,"o":60.85,"h":62.0,"l":60.02,"c":61.94},{"t":1652086800000,"o":61.95,"h":62.18,"l":60.98,"c":61.23},{"t":1652090400000,"o":61.22,"h":61.51,"l":59.07,"c":60.69},{"t":1652094000000,"o":60.69,"h":61.32,"l":59.36,"c":59.42},{"t":1652097600000,"o":59.42,"h":60.28,"l":58.35,"c":59.31},{"t":1652101200000,"o":59.31,"h":61.7,"l":58.64,"c":60.25},{"t":1652104800000,"o":60.26,"h":60.59,"l":58.56,"c":58.78},{"t":1652108400000,"o":58.77,"h":59.42,"l":56.53,"c":57.38},{"t":1652112000000,"o":57.35,"h":57.64,"l":52.31,"c":53.67},{"t":1652115600000,"o":53.68,"h":54.03,"l":51.37,"c":51.48},{"t":1652119200000,"o":51.48,"h":52.0,"l":43.3,"c":46.77},{"t":1652122800000,"o":46.76,"h":48.51,"l":44.23,"c":46.96},{"t":1652126400000,"o":46.98,"h":52.26,"l":46.98,"c":48.53},{"t":1652130000000,"o":48.53,"h":49.07,"l":41.29,"c":42.0},{"t":1652133600000,"o":42.02,"h":47.09,"l":39.85,"c":41.47},{"t":1652137200000,"o":41.47,"h":42.74,"l":30.0,"c":30.29},{"t":1652140800000,"o":30.31,"h":39.28,"l":26.54,"c":38.61},{"t":1652144400000,"o":38.61,"h":40.18,"l":34.02,"c":35.22},{"t":1652148000000,"o":35.21,"h":35.99,"l":30.77,"c":31.13},{"t":1652151600000,"o":31.12,"h":31.32,"l":25.04,"c":25.37},{"t":1652155200000,"o":25.36,"h":30.5,"l":23.5,"c":29.8},{"t":1652158800000,"o":29.81,"h":33.4,"l":27.64,"c":32.63},{"t":1652162400000,"o":32.63,"h":37.0,"l":32.05,"c":34.55},{"t":1652166000000,"o":34.56,"h":35.4,"l":30.44,"c":30.9},{"t":1652169600000,"o":30.9,"h":33.97,"l":30.62,"c":31.84},{"t":1652173200000,"o":31.85,"h":32.77,"l":28.6,"c":29.0},{"t":1652176800000,"o":28.99,"h":30.42,"l":28.01,"c":29.16},{"t":1652180400000,"o":29.14,"h":33.47,"l":29.02,"c":32.46},{"t":1652184000000,"o":32.46,"h":34.5,"l":31.69,"c":33.54},{"t":1652187600000,"o":33.54,"h":34.58,"l":30.88,"c":31.76},{"t":1652191200000,"o":31.76,"h":33.04,"l":28.56,"c":29.47},{"t":1652194800000,"o":29.46,"h":33.15,"l":27.67,"c":31.46},{"t":1652198400000,"o":31.46,"h":32.49,"l":29.66,"c":30.04},{"t":1652202000000,"o":30.04,"h":32.1,"l":29.7,"c":31.02},{"t":1652205600000,"o":31.02,"h":31.15,"l":28.03,"c":28.09},{"t":1652209200000,"o":28.07,"h":28.42,"l":24.0,"c":25.06},{"t":1652212800000,"o":25.06,"h":25.3,"l":22.42,"c":23.07},{"t":1652216400000,"o":23.06,"h":23.48,"l":15.42,"c":16.13},{"t":1652220000000,"o":16.11,"h":18.7,"l":13.57,"c":15.6},{"t":1652223600000,"o":15.57,"h":18.38,"l":14.97,"c":17.46},{"t":1652227200000,"o":17.46,"h":19.66,"l":16.67,"c":16.93},{"t":1652230800000,"o":16.93,"h":17.16,"l":14.04,"c":14.46},{"t":1652234400000,"o":14.46,"h":16.13,"l":13.0,"c":15.48},{"t":1652238000000,"o":15.48,"h":15.92,"l":13.1,"c":13.59},{"t":1652241600000,"o":13.59,"h":14.2,"l":10.35,"c":10.51},{"t":1652245200000,"o":10.5,"h":12.09,"l":8.73,"c":9.37},{"t":1652248800000,"o":9.37,"h":9.68,"l":6.12,"c":6.3},{"t":1652252400000,"o":6.31,"h":7.29,"l":4.12,"c":5.71},{"t":1652256000000,"o":5.71,"h":7.29,"l":5.11,"c":5.82},{"t":1652259600000,"o":5.83,"h":5.87,"l":3.45,"c":4.02},{"t":1652263200000,"o":4.01,"h":4.79,"l":2.47,"c":2.79},{"t":1652266800000,"o":2.79,"h":2.87,"l":1.59,"c":1.59},{"t":1652270400000,"o":1.6,"h":1.97,"l":0.69,"c":0.7302},{"t":1652274000000,"o":0.7302,"h":3.2409,"l":0.73,"c":2.7998},{"t":1652277600000,"o":2.7998,"h":7.78,"l":2.7643,"c":4.0874},{"t":1652281200000,"o":4.0874,"h":4.1,"l":2.01,"c":2.3876},{"t":1652284800000,"o":2.3862,"h":2.6426,"l":2.005,"c":2.2633},{"t":1652288400000,"o":2.2635,"h":2.344,"l":1.5,"c":1.7756},{"t":1652292000000,"o":1.7725,"h":1.8556,"l":1.2501,"c":1.3529},{"t":1652295600000,"o":1.355,"h":1.3987,"l":1.07,"c":1.2193},{"t":1652299200000,"o":1.2193,"h":1.38,"l":1.0009,"c":1.0506},{"t":1652302800000,"o":1.0506,"h":1.2,"l":1.0033,"c":1.0856},{"t":1652306400000,"o":1.0856,"h":1.5351,"l":1.021,"c":1.0819},{"t":1652310000000,"o":1.0819,"h":1.1567,"l":1.0222,"c":1.0769},{"t":1652313600000,"o":1.0782,"h":1.38,"l":1.036,"c":1.1297},{"t":1652317200000,"o":1.1297,"h":1.2319,"l":0.84,"c":0.8401},{"t":1652320800000,"o":0.8402,"h":0.8844,"l":0.5501,"c":0.5506},{"t":1652324400000,"o":0.5506,"h":0.56,"l":0.3555,"c":0.392},{"t":1652328000000,"o":0.392,"h":0.4198,"l":0.2771,"c":0.292},{"t":1652331600000,"o":0.292,"h":0.4245,"l":0.21,"c":0.3148},{"t":1652335200000,"o":0.3147,"h":0.3156,"l":0.16,"c":0.1605},{"t":1652338800000,"o":0.1605,"h":0.184,"l":0.1211,"c":0.1407},{"t":1652342400000,"o":0.141,"h":0.1442,"l":0.075,"c":0.0758},{"t":1652346000000,"o":0.0758,"h":0.0789,"l":0.0257,"c":0.026},{"t":1652349600000,"o":0.026,"h":0.13,"l":0.0202,"c":0.0871},{"t":1652353200000,"o":0.0869,"h":0.1369,"l":0.0316,"c":0.0325},{"t":1652356800000,"o":0.0324,"h":0.0385,"l":0.0194,"c":0.02018},{"t":1652360400000,"o":0.02018,"h":0.025,"l":0.01122,"c":0.01131},{"t":1652364000000,"o":0.0113,"h":0.01233,"l":0.00354,"c":0.00657},{"t":1652367600000,"o":0.00656,"h":0.01272,"l":0.00465,"c":0.00887},{"t":1652371200000,"o":0.00888,"h":0.02591,"l":0.0071,"c":0.01427},{"t":1652374800000,"o":0.01428,"h":0.0217,"l":0.01109,"c":0.02002},{"t":1652378400000,"o":0.02002,"h":0.0235,"l":0.01635,"c":0.02229},{"t":1652382000000,"o":0.02229,"h":0.04032,"l":0.0222,"c":0.03834},{"t":1652385600000,"o":0.0382,"h":0.049,"l":0.022,"c":0.02757},{"t":1652389200000,"o":0.02754,"h":0.02797,"l":0.00364,"c":0.00408},{"t":1652392800000,"o":0.00409,"h":0.0044,"l":0.00115,"c":0.0024},{"t":1652396400000,"o":0.00241,"h":0.00295,"l":0.00028,"c":0.00032},{"t":1652400000000,"o":0.00032,"h":0.0006,"l":4e-05,"c":5e-05}];
+window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65},{"t":1667264400000,"o":32.64,"h":32.88,"l":32.64,"c":32.78},{"t":1667268000000,"o":32.79,"h":33.0,"l":32.7,"c":32.95},{"t":1667271600000,"o":32.96,"h":33.0,"l":32.6,"c":32.61},{"t":1667275200000,"o":32.61,"h":32.73,"l":32.57,"c":32.67},{"t":1667278800000,"o":32.66,"h":32.87,"l":32.66,"c":32.77},{"t":1667282400000,"o":32.78,"h":33.23,"l":32.72,"c":33.18},{"t":1667286000000,"o":33.18,"h":33.23,"l":32.91,"c":33.03},{"t":1667289600000,"o":33.03,"h":33.14,"l":32.83,"c":32.84},{"t":1667293200000,"o":32.84,"h":33.12,"l":32.83,"c":32.92},{"t":1667296800000,"o":32.92,"h":33.39,"l":32.86,"c":33.2},{"t":1667300400000,"o":33.19,"h":33.25,"l":32.83,"c":32.9},{"t":1667304000000,"o":32.91,"h":33.14,"l":32.76,"c":33.04},{"t":1667307600000,"o":33.03,"h":33.05,"l":32.45,"c":32.68},{"t":1667311200000,"o":32.69,"h":32.71,"l":32.27,"c":32.42},{"t":1667314800000,"o":32.43,"h":32.6,"l":32.35,"c":32.48},{"t":1667318400000,"o":32.47,"h":32.59,"l":32.17,"c":32.35},{"t":1667322000000,"o":32.35,"h":32.45,"l":32.16,"c":32.21},{"t":1667325600000,"o":32.21,"h":32.41,"l":32.18,"c":32.4},{"t":1667329200000,"o":32.4,"h":32.53,"l":32.2,"c":32.22},{"t":1667332800000,"o":32.22,"h":32.38,"l":32.15,"c":32.36},{"t":1667336400000,"o":32.37,"h":32.44,"l":32.28,"c":32.32},{"t":1667340000000,"o":32.32,"h":32.4,"l":32.23,"c":32.38},{"t":1667343600000,"o":32.37,"h":32.39,"l":32.2,"c":32.2},{"t":1667347200000,"o":32.2,"h":32.32,"l":31.93,"c":32.24},{"t":1667350800000,"o":32.24,"h":32.28,"l":32.15,"c":32.16},{"t":1667354400000,"o":32.15,"h":32.22,"l":31.95,"c":32.22},{"t":1667358000000,"o":32.21,"h":32.38,"l":32.16,"c":32.26},{"t":1667361600000,"o":32.26,"h":32.35,"l":32.23,"c":32.3},{"t":1667365200000,"o":32.3,"h":32.42,"l":32.11,"c":32.13},{"t":1667368800000,"o":32.13,"h":32.14,"l":32.01,"c":32.05},{"t":1667372400000,"o":32.04,"h":32.06,"l":31.53,"c":31.73},{"t":1667376000000,"o":31.72,"h":31.9,"l":31.61,"c":31.9},{"t":1667379600000,"o":31.89,"h":31.96,"l":31.29,"c":31.33},{"t":1667383200000,"o":31.33,"h":31.41,"l":31.11,"c":31.39},{"t":1667386800000,"o":31.38,"h":31.47,"l":31.28,"c":31.3},{"t":1667390400000,"o":31.3,"h":31.41,"l":31.13,"c":31.24},{"t":1667394000000,"o":31.24,"h":31.43,"l":31.16,"c":31.27},{"t":1667397600000,"o":31.28,"h":31.56,"l":31.23,"c":31.45},{"t":1667401200000,"o":31.45,"h":31.45,"l":31.27,"c":31.33},{"t":1667404800000,"o":31.32,"h":31.59,"l":31.07,"c":31.56},{"t":1667408400000,"o":31.57,"h":31.63,"l":31.14,"c":31.38},{"t":1667412000000,"o":31.37,"h":32.95,"l":31.04,"c":31.82},{"t":1667415600000,"o":31.82,"h":32.3,"l":30.83,"c":30.91},{"t":1667419200000,"o":30.91,"h":31.03,"l":30.24,"c":30.29},{"t":1667422800000,"o":30.28,"h":30.52,"l":30.24,"c":30.51},{"t":1667426400000,"o":30.51,"h":30.92,"l":30.33,"c":30.56},{"t":1667430000000,"o":30.55,"h":30.87,"l":30.49,"c":30.8},{"t":1667433600000,"o":30.81,"h":31.24,"l":30.61,"c":31.15},{"t":1667437200000,"o":31.15,"h":31.38,"l":30.98,"c":31.29},{"t":1667440800000,"o":31.29,"h":31.61,"l":31.26,"c":31.46},{"t":1667444400000,"o":31.47,"h":31.81,"l":31.46,"c":31.64},{"t":1667448000000,"o":31.65,"h":32.05,"l":31.64,"c":31.87},{"t":1667451600000,"o":31.88,"h":32.25,"l":31.88,"c":32.02},{"t":1667455200000,"o":32.02,"h":32.08,"l":31.59,"c":31.72},{"t":1667458800000,"o":31.71,"h":32.07,"l":31.63,"c":31.64},{"t":1667462400000,"o":31.65,"h":31.83,"l":31.49,"c":31.71},{"t":1667466000000,"o":31.71,"h":32.06,"l":31.69,"c":31.94},{"t":1667469600000,"o":31.94,"h":32.04,"l":31.61,"c":31.66},{"t":1667473200000,"o":31.66,"h":31.8,"l":31.13,"c":31.26},{"t":1667476800000,"o":31.26,"h":31.49,"l":30.93,"c":31.07},{"t":1667480400000,"o":31.08,"h":31.34,"l":30.94,"c":30.96},{"t":1667484000000,"o":30.97,"h":31.57,"l":30.86,"c":31.52},{"t":1667487600000,"o":31.53,"h":31.54,"l":31.11,"c":31.2},{"t":1667491200000,"o":31.19,"h":31.44,"l":31.17,"c":31.39},{"t":1667494800000,"o":31.39,"h":31.4,"l":31.18,"c":31.21},{"t":1667498400000,"o":31.21,"h":31.36,"l":31.16,"c":31.32},{"t":1667502000000,"o":31.33,"h":31.41,"l":31.2,"c":31.31},{"t":1667505600000,"o":31.31,"h":31.43,"l":31.21,"c":31.24},{"t":1667509200000,"o":31.23,"h":31.32,"l":31.17,"c":31.19},{"t":1667512800000,"o":31.19,"h":31.23,"l":30.89,"c":30.9},{"t":1667516400000,"o":30.89,"h":31.0,"l":30.62,"c":30.85},{"t":1667520000000,"o":30.86,"h":31.26,"l":30.66,"c":31.19},{"t":1667523600000,"o":31.19,"h":31.29,"l":30.98,"c":31.1},{"t":1667527200000,"o":31.11,"h":31.33,"l":31.1,"c":31.23},{"t":1667530800000,"o":31.24,"h":31.94,"l":31.18,"c":31.94},{"t":1667534400000,"o":31.94,"h":31.96,"l":31.68,"c":31.81},{"t":1667538000000,"o":31.81,"h":32.06,"l":31.73,"c":31.97},{"t":1667541600000,"o":31.97,"h":32.58,"l":31.97,"c":32.48},{"t":1667545200000,"o":32.49,"h":32.56,"l":32.34,"c":32.39},{"t":1667548800000,"o":32.39,"h":32.66,"l":32.26,"c":32.28},{"t":1667552400000,"o":32.29,"h":32.36,"l":32.15,"c":32.19},{"t":1667556000000,"o":32.19,"h":32.77,"l":32.19,"c":32.67},{"t":1667559600000,"o":32.66,"h":32.68,"l":32.29,"c":32.31},{"t":1667563200000,"o":32.31,"h":32.98,"l":31.87,"c":32.95},{"t":1667566800000,"o":32.95,"h":33.48,"l":32.81,"c":33.03},{"t":1667570400000,"o":33.03,"h":34.0,"l":33.01,"c":33.73},{"t":1667574000000,"o":33.73,"h":33.8,"l":32.92,"c":33.13},{"t":1667577600000,"o":33.12,"h":33.34,"l":32.85,"c":33.04},{"t":1667581200000,"o":33.04,"h":33.07,"l":32.7,"c":32.83},{"t":1667584800000,"o":32.83,"h":33.34,"l":32.71,"c":33.07},{"t":1667588400000,"o":33.07,"h":33.53,"l":33.06,"c":33.5},{"t":1667592000000,"o":33.5,"h":33.65,"l":33.38,"c":33.57},{"t":1667595600000,"o":33.56,"h":33.91,"l":33.43,"c":33.8},{"t":1667599200000,"o":33.8,"h":33.99,"l":33.68,"c":33.88},{"t":1667602800000,"o":33.88,"h":34.2,"l":33.65,"c":33.74},{"t":1667606400000,"o":33.73,"h":34.94,"l":33.66,"c":34.92},{"t":1667610000000,"o":34.92,"h":35.04,"l":34.46,"c":34.76},{"t":1667613600000,"o":34.75,"h":34.9,"l":34.64,"c":34.76},{"t":1667617200000,"o":34.77,"h":34.88,"l":34.47,"c":34.7},{"t":1667620800000,"o":34.69,"h":34.88,"l":34.51,"c":34.57},{"t":1667624400000,"o":34.57,"h":34.79,"l":34.54,"c":34.59},{"t":1667628000000,"o":34.6,"h":35.33,"l":34.57,"c":35.2},{"t":1667631600000,"o":35.2,"h":35.6,"l":35.11,"c":35.24},{"t":1667635200000,"o":35.23,"h":35.24,"l":34.8,"c":34.95},{"t":1667638800000,"o":34.94,"h":35.14,"l":34.81,"c":35.03},{"t":1667642400000,"o":35.04,"h":35.17,"l":34.92,"c":35.15},{"t":1667646000000,"o":35.15,"h":35.55,"l":35.13,"c":35.42},{"t":1667649600000,"o":35.42,"h":35.7,"l":34.9,"c":34.9},{"t":1667653200000,"o":34.9,"h":34.99,"l":34.53,"c":34.69},{"t":1667656800000,"o":34.7,"h":34.87,"l":34.39,"c":34.5},{"t":1667660400000,"o":34.51,"h":38.08,"l":34.43,"c":37.24},{"t":1667664000000,"o":37.24,"h":38.79,"l":37.22,"c":37.71},{"t":1667667600000,"o":37.71,"h":37.73,"l":36.7,"c":36.86},{"t":1667671200000,"o":36.86,"h":36.9,"l":35.77,"c":35.97},{"t":1667674800000,"o":35.98,"h":37.14,"l":35.98,"c":37.09},{"t":1667678400000,"o":37.1,"h":37.1,"l":36.58,"c":36.73},{"t":1667682000000,"o":36.73,"h":37.28,"l":36.71,"c":37.02},{"t":1667685600000,"o":37.02,"h":37.29,"l":36.84,"c":36.95},{"t":1667689200000,"o":36.95,"h":37.32,"l":36.46,"c":36.9},{"t":1667692800000,"o":36.9,"h":37.06,"l":36.3,"c":36.43},{"t":1667696400000,"o":36.43,"h":36.53,"l":35.7,"c":35.71},{"t":1667700000000,"o":35.71,"h":36.12,"l":35.63,"c":35.81},{"t":1667703600000,"o":35.8,"h":36.1,"l":35.8,"c":36.01},{"t":1667707200000,"o":36.01,"h":36.23,"l":35.95,"c":36.11},{"t":1667710800000,"o":36.11,"h":36.14,"l":35.53,"c":35.61},{"t":1667714400000,"o":35.62,"h":35.96,"l":35.54,"c":35.88},{"t":1667718000000,"o":35.88,"h":36.18,"l":35.62,"c":36.16},{"t":1667721600000,"o":36.17,"h":36.37,"l":35.87,"c":36.23},{"t":1667725200000,"o":36.24,"h":36.41,"l":36.11,"c":36.13},{"t":1667728800000,"o":36.13,"h":36.3,"l":36.03,"c":36.17},{"t":1667732400000,"o":36.16,"h":36.17,"l":35.57,"c":35.75},{"t":1667736000000,"o":35.75,"h":35.95,"l":35.6,"c":35.7},{"t":1667739600000,"o":35.71,"h":35.82,"l":35.6,"c":35.65},{"t":1667743200000,"o":35.64,"h":35.95,"l":35.18,"c":35.72},{"t":1667746800000,"o":35.73,"h":36.0,"l":34.96,"c":35.05},{"t":1667750400000,"o":35.06,"h":35.4,"l":34.47,"c":35.04},{"t":1667754000000,"o":35.03,"h":35.05,"l":34.6,"c":34.78},{"t":1667757600000,"o":34.77,"h":34.8,"l":34.25,"c":34.5},{"t":1667761200000,"o":34.5,"h":34.51,"l":33.71,"c":34.19},{"t":1667764800000,"o":34.18,"h":34.18,"l":33.88,"c":34.14},{"t":1667768400000,"o":34.14,"h":34.15,"l":33.66,"c":33.78},{"t":1667772000000,"o":33.77,"h":33.87,"l":33.21,"c":33.23},{"t":1667775600000,"o":33.22,"h":33.31,"l":32.31,"c":32.62},{"t":1667779200000,"o":32.61,"h":32.97,"l":32.12,"c":32.39},{"t":1667782800000,"o":32.39,"h":32.83,"l":32.32,"c":32.73},{"t":1667786400000,"o":32.72,"h":33.13,"l":32.63,"c":32.84},{"t":1667790000000,"o":32.84,"h":32.84,"l":32.38,"c":32.44},{"t":1667793600000,"o":32.45,"h":32.54,"l":32.01,"c":32.49},{"t":1667797200000,"o":32.49,"h":32.57,"l":32.25,"c":32.25},{"t":1667800800000,"o":32.26,"h":32.37,"l":31.86,"c":32.01},{"t":1667804400000,"o":32.01,"h":32.04,"l":30.7,"c":30.78},{"t":1667808000000,"o":30.78,"h":31.58,"l":30.62,"c":31.5},{"t":1667811600000,"o":31.49,"h":31.64,"l":31.23,"c":31.28},{"t":1667815200000,"o":31.28,"h":31.93,"l":31.27,"c":31.7},{"t":1667818800000,"o":31.7,"h":31.87,"l":31.56,"c":31.62},{"t":1667822400000,"o":31.61,"h":31.8,"l":31.26,"c":31.52},{"t":1667826000000,"o":31.53,"h":31.79,"l":31.02,"c":31.26},{"t":1667829600000,"o":31.26,"h":31.43,"l":30.87,"c":31.29},{"t":1667833200000,"o":31.29,"h":32.85,"l":30.92,"c":32.82},{"t":1667836800000,"o":32.82,"h":32.87,"l":31.97,"c":31.97},{"t":1667840400000,"o":31.98,"h":32.3,"l":31.86,"c":32.14},{"t":1667844000000,"o":32.14,"h":32.61,"l":32.14,"c":32.29},{"t":1667847600000,"o":32.29,"h":32.85,"l":32.24,"c":32.38},{"t":1667851200000,"o":32.38,"h":32.47,"l":31.92,"c":32.05},{"t":1667854800000,"o":32.04,"h":32.14,"l":30.82,"c":31.01},{"t":1667858400000,"o":31.02,"h":31.04,"l":28.0,"c":29.42},{"t":1667862000000,"o":29.42,"h":29.69,"l":29.2,"c":29.62},{"t":1667865600000,"o":29.62,"h":29.7,"l":29.03,"c":29.06},{"t":1667869200000,"o":29.05,"h":29.55,"l":28.95,"c":29.13},{"t":1667872800000,"o":29.13,"h":29.4,"l":27.63,"c":27.79},{"t":1667876400000,"o":27.79,"h":28.32,"l":26.0,"c":26.5},{"t":1667880000000,"o":26.5,"h":27.73,"l":26.26,"c":26.92},{"t":1667883600000,"o":26.92,"h":27.16,"l":25.0,"c":26.18},{"t":1667887200000,"o":26.17,"h":28.68,"l":25.8,"c":27.83},{"t":1667890800000,"o":27.83,"h":28.29,"l":27.34,"c":27.96},{"t":1667894400000,"o":27.95,"h":28.56,"l":27.78,"c":28.19},{"t":1667898000000,"o":28.19,"h":29.09,"l":28.09,"c":28.75},{"t":1667901600000,"o":28.75,"h":28.76,"l":28.14,"c":28.22},{"t":1667905200000,"o":28.22,"h":28.57,"l":27.87,"c":28.0},{"t":1667908800000,"o":28.01,"h":28.5,"l":27.96,"c":28.46},{"t":1667912400000,"o":28.47,"h":28.51,"l":27.38,"c":27.4},{"t":1667916000000,"o":27.41,"h":28.15,"l":26.66,"c":27.26},{"t":1667919600000,"o":27.25,"h":27.73,"l":26.65,"c":27.72},{"t":1667923200000,"o":27.71,"h":31.72,"l":27.46,"c":29.15},{"t":1667926800000,"o":29.16,"h":29.44,"l":25.25,"c":25.5},{"t":1667930400000,"o":25.5,"h":26.11,"l":22.9,"c":24.35},{"t":1667934000000,"o":24.36,"h":25.83,"l":19.8,"c":23.77},{"t":1667937600000,"o":23.77,"h":24.33,"l":22.63,"c":23.7},{"t":1667941200000,"o":23.71,"h":24.07,"l":23.21,"c":23.82},{"t":1667944800000,"o":23.82,"h":24.01,"l":23.38,"c":23.51},{"t":1667948400000,"o":23.51,"h":24.73,"l":23.36,"c":24.38},{"t":1667952000000,"o":24.38,"h":24.38,"l":23.15,"c":23.2},{"t":1667955600000,"o":23.19,"h":23.66,"l":22.59,"c":22.69},{"t":1667959200000,"o":22.68,"h":23.31,"l":22.0,"c":22.01},{"t":1667962800000,"o":22.01,"h":22.41,"l":21.21,"c":22.1},{"t":1667966400000,"o":22.11,"h":22.17,"l":21.54,"c":21.74},{"t":1667970000000,"o":21.74,"h":21.83,"l":20.1,"c":20.49},{"t":1667973600000,"o":20.5,"h":21.05,"l":20.01,"c":20.14},{"t":1667977200000,"o":20.14,"h":20.58,"l":19.12,"c":19.29},{"t":1667980800000,"o":19.29,"h":19.3,"l":17.55,"c":18.5},{"t":1667984400000,"o":18.51,"h":18.63,"l":16.88,"c":17.33},{"t":1667988000000,"o":17.33,"h":18.45,"l":16.24,"c":17.67},{"t":1667991600000,"o":17.67,"h":20.48,"l":17.61,"c":20.05},{"t":1667995200000,"o":20.05,"h":20.77,"l":19.3,"c":19.6},{"t":1667998800000,"o":19.6,"h":19.84,"l":18.17,"c":18.87},{"t":1668002400000,"o":18.87,"h":19.1,"l":17.82,"c":18.48},{"t":1668006000000,"o":18.48,"h":18.9,"l":15.73,"c":16.07},{"t":1668009600000,"o":16.08,"h":17.84,"l":15.95,"c":16.64},{"t":1668013200000,"o":16.64,"h":17.1,"l":14.56,"c":14.57},{"t":1668016800000,"o":14.58,"h":14.99,"l":12.54,"c":14.27},{"t":1668020400000,"o":14.26,"h":15.2,"l":13.62,"c":13.84},{"t":1668024000000,"o":13.85,"h":14.7,"l":12.88,"c":13.47},{"t":1668027600000,"o":13.47,"h":13.57,"l":12.37,"c":12.49},{"t":1668031200000,"o":12.51,"h":14.87,"l":12.48,"c":14.22},{"t":1668034800000,"o":14.22,"h":14.5,"l":13.39,"c":14.08},{"t":1668038400000,"o":14.08,"h":15.3,"l":13.59,"c":14.85},{"t":1668042000000,"o":14.83,"h":15.3,"l":13.19,"c":13.59},{"t":1668045600000,"o":13.58,"h":13.92,"l":13.41,"c":13.88},{"t":1668049200000,"o":13.88,"h":16.05,"l":13.74,"c":15.28},{"t":1668052800000,"o":15.29,"h":15.42,"l":14.53,"c":15.17},{"t":1668056400000,"o":15.18,"h":15.55,"l":14.89,"c":15.11},{"t":1668060000000,"o":15.11,"h":15.53,"l":14.73,"c":15.28},{"t":1668063600000,"o":15.28,"h":16.06,"l":15.21,"c":15.34},{"t":1668067200000,"o":15.34,"h":15.34,"l":13.14,"c":14.16},{"t":1668070800000,"o":14.16,"h":14.4,"l":13.8,"c":14.22},{"t":1668074400000,"o":14.22,"h":14.37,"l":13.38,"c":13.48},{"t":1668078000000,"o":13.48,"h":14.5,"l":13.44,"c":14.15},{"t":1668081600000,"o":14.16,"h":16.56,"l":14.0,"c":15.46},{"t":1668085200000,"o":15.44,"h":17.55,"l":14.83,"c":17.49},{"t":1668088800000,"o":17.46,"h":17.53,"l":16.22,"c":16.77},{"t":1668092400000,"o":16.77,"h":18.55,"l":16.67,"c":17.67},{"t":1668096000000,"o":17.66,"h":18.87,"l":17.33,"c":17.98},{"t":1668099600000,"o":17.99,"h":17.99,"l":16.24,"c":16.65},{"t":1668103200000,"o":16.66,"h":17.4,"l":16.55,"c":17.0},{"t":1668106800000,"o":17.0,"h":17.4,"l":16.64,"c":17.28},{"t":1668110400000,"o":17.29,"h":18.4,"l":16.9,"c":18.08},{"t":1668114000000,"o":18.07,"h":18.5,"l":17.47,"c":18.08},{"t":1668117600000,"o":18.07,"h":18.08,"l":17.55,"c":17.98},{"t":1668121200000,"o":17.98,"h":18.06,"l":17.29,"c":17.66},{"t":1668124800000,"o":17.65,"h":18.04,"l":16.96,"c":17.63},{"t":1668128400000,"o":17.63,"h":18.15,"l":17.2,"c":17.33},{"t":1668132000000,"o":17.34,"h":17.35,"l":16.51,"c":16.74},{"t":1668135600000,"o":16.73,"h":16.78,"l":15.81,"c":16.39},{"t":1668139200000,"o":16.38,"h":16.56,"l":16.16,"c":16.3},{"t":1668142800000,"o":16.3,"h":17.34,"l":16.25,"c":17.15},{"t":1668146400000,"o":17.14,"h":17.25,"l":16.8,"c":17.07},{"t":1668150000000,"o":17.07,"h":17.69,"l":16.85,"c":17.22},{"t":1668153600000,"o":17.22,"h":17.48,"l":17.07,"c":17.22},{"t":1668157200000,"o":17.22,"h":17.6,"l":17.1,"c":17.55},{"t":1668160800000,"o":17.55,"h":18.1,"l":17.32,"c":17.9},{"t":1668164400000,"o":17.89,"h":18.31,"l":17.65,"c":18.13},{"t":1668168000000,"o":18.13,"h":18.15,"l":17.63,"c":17.94},{"t":1668171600000,"o":17.94,"h":18.28,"l":17.27,"c":17.41},{"t":1668175200000,"o":17.41,"h":17.42,"l":15.1,"c":16.28},{"t":1668178800000,"o":16.27,"h":16.74,"l":16.17,"c":16.46},{"t":1668182400000,"o":16.46,"h":16.59,"l":15.79,"c":16.31},{"t":1668186000000,"o":16.32,"h":16.53,"l":15.94,"c":16.38},{"t":1668189600000,"o":16.37,"h":16.65,"l":16.25,"c":16.27},{"t":1668193200000,"o":16.28,"h":16.36,"l":16.0,"c":16.22},{"t":1668196800000,"o":16.21,"h":16.22,"l":15.37,"c":15.5},{"t":1668200400000,"o":15.51,"h":15.89,"l":15.5,"c":15.85},{"t":1668204000000,"o":15.85,"h":16.18,"l":15.82,"c":15.98},{"t":1668207600000,"o":15.98,"h":16.5,"l":15.68,"c":16.45},{"t":1668211200000,"o":16.46,"h":16.53,"l":16.0,"c":16.06},{"t":1668214800000,"o":16.05,"h":16.14,"l":15.8,"c":15.89},{"t":1668218400000,"o":15.89,"h":16.22,"l":15.77,"c":15.93},{"t":1668222000000,"o":15.92,"h":15.97,"l":15.67,"c":15.81},{"t":1668225600000,"o":15.82,"h":15.92,"l":15.24,"c":15.31},{"t":1668229200000,"o":15.31,"h":15.35,"l":14.75,"c":14.98},{"t":1668232800000,"o":14.97,"h":15.3,"l":14.87,"c":15.17},{"t":1668236400000,"o":15.17,"h":15.93,"l":15.15,"c":15.49},{"t":1668240000000,"o":15.49,"h":15.7,"l":15.3,"c":15.5},{"t":1668243600000,"o":15.5,"h":15.61,"l":15.31,"c":15.47},{"t":1668247200000,"o":15.48,"h":15.61,"l":15.34,"c":15.4},{"t":1668250800000,"o":15.4,"h":15.43,"l":15.04,"c":15.31},{"t":1668254400000,"o":15.31,"h":15.5,"l":15.19,"c":15.34},{"t":1668258000000,"o":15.34,"h":15.36,"l":15.06,"c":15.22},{"t":1668261600000,"o":15.22,"h":15.23,"l":14.94,"c":15.08},{"t":1668265200000,"o":15.08,"h":15.26,"l":14.79,"c":14.82},{"t":1668268800000,"o":14.82,"h":15.01,"l":14.76,"c":14.94},{"t":1668272400000,"o":14.94,"h":15.26,"l":14.85,"c":15.13},{"t":1668276000000,"o":15.13,"h":15.2,"l":14.98,"c":15.18},{"t":1668279600000,"o":15.18,"h":15.25,"l":15.05,"c":15.16},{"t":1668283200000,"o":15.15,"h":15.17,"l":14.92,"c":14.96},{"t":1668286800000,"o":14.97,"h":15.03,"l":14.86,"c":14.98},{"t":1668290400000,"o":14.97,"h":15.02,"l":14.83,"c":14.91},{"t":1668294000000,"o":14.91,"h":14.94,"l":14.47,"c":14.58},{"t":1668297600000,"o":14.58,"h":14.74,"l":14.25,"c":14.43},{"t":1668301200000,"o":14.42,"h":14.56,"l":14.04,"c":14.2},{"t":1668304800000,"o":14.2,"h":14.45,"l":14.15,"c":14.44},{"t":1668308400000,"o":14.45,"h":14.67,"l":14.28,"c":14.55},{"t":1668312000000,"o":14.55,"h":14.67,"l":14.27,"c":14.29},{"t":1668315600000,"o":14.29,"h":14.6,"l":14.27,"c":14.49},{"t":1668319200000,"o":14.49,"h":14.53,"l":13.68,"c":13.72},{"t":1668322800000,"o":13.73,"h":14.05,"l":13.5,"c":13.95},{"t":1668326400000,"o":13.95,"h":13.99,"l":13.53,"c":13.58},{"t":1668330000000,"o":13.58,"h":13.69,"l":13.33,"c":13.46},{"t":1668333600000,"o":13.46,"h":13.72,"l":13.45,"c":13.64},{"t":1668337200000,"o":13.65,"h":13.94,"l":13.5,"c":13.78},{"t":1668340800000,"o":13.78,"h":13.88,"l":13.63,"c":13.69},{"t":1668344400000,"o":13.69,"h":14.43,"l":13.61,"c":14.17},{"t":1668348000000,"o":14.17,"h":14.32,"l":13.91,"c":13.92},{"t":1668351600000,"o":13.91,"h":14.08,"l":13.75,"c":14.06},{"t":1668355200000,"o":14.05,"h":14.19,"l":13.85,"c":14.07},{"t":1668358800000,"o":14.07,"h":14.1,"l":13.82,"c":13.87},{"t":1668362400000,"o":13.87,"h":13.94,"l":13.63,"c":13.78},{"t":1668366000000,"o":13.78,"h":14.01,"l":13.72,"c":13.99},{"t":1668369600000,"o":13.98,"h":14.02,"l":13.75,"c":13.8},{"t":1668373200000,"o":13.79,"h":13.97,"l":13.35,"c":13.58},{"t":1668376800000,"o":13.58,"h":13.81,"l":13.51,"c":13.68},{"t":1668380400000,"o":13.68,"h":13.68,"l":13.02,"c":13.18},{"t":1668384000000,"o":13.18,"h":13.34,"l":12.61,"c":12.81}];
+</script>
+<script>
+(() => {
+  // ============================================================
+  // CONSTANTES DE RYTHME (faciles à régler)
+  // ============================================================
+  const VOLATILITY_CALM_THRESHOLD   = 0.03;   // < 3 % = calme
+  const VOLATILITY_STRONG_THRESHOLD = 0.10;   // > 10 % = effondrement
+
+  const SKIP_WHEN_CALM   = 2;     // sur le plateau, on saute 1 bougie sur 2 (réduit pour pas filer trop vite)
+  const SKIP_WHEN_MID    = 1;     // variation moyenne, on prend toutes les bougies
+  const SKIP_WHEN_STRONG = 1;     // crash, toutes les bougies
+
+  const DELAY_CALM_MS   = 550;    // pause sur plateau
+  const DELAY_MID_MS    = 700;
+  const DELAY_STRONG_MS = 1100;   // pause sur le crash, on fait durer
+
+
+  // ============================================================
+  // REGISTRE DES SCÉNARIOS
+  // ============================================================
+  const SCENARIOS = {
+    luna: {
+      id: 'luna',
+      label: { en: 'Terra/LUNA — May 2022', fr: 'Terra/LUNA — Mai 2022' },
+      labelLong: { en: 'The Terra/LUNA Collapse — May 2022', fr: "L'effondrement de Terra/LUNA — Mai 2022" },
+      token: 'LUNA',
+      candles: window.LUNA_CANDLES,
+      eventIdx: { m1: 299, m2: 333, m3: 349 },
+      crashStartIdx: 306,
+      crashEndIdx: 360,
+      analyzeBoundaries: { early: 280, preCrash: 320, inCrash: 355 },
+      // Multiplicateur de rythme : 1.0 = vitesse de référence (~3 min pour LUNA)
+      speedFactor: 1.0
+    },
+    sol: {
+      id: 'sol',
+      label: { en: 'FTX/SOL — Nov 2022', fr: 'FTX/SOL — Nov 2022' },
+      labelLong: { en: 'The FTX Contagion — November 2022', fr: 'La contagion FTX — Novembre 2022' },
+      token: 'SOL',
+      candles: window.SOL_CANDLES,
+      eventIdx: { m1: 38, m2: 184, m3: 214 },
+      crashStartIdx: 170,
+      crashEndIdx: 230,
+      analyzeBoundaries: { early: 100, preCrash: 180, inCrash: 230 },
+      // SOL a moins de bougies et plus de volatilité → on ralentit pour viser ~3 min
+      speedFactor: 1.85
+    }
+  };
+  let currentScenarioId = 'luna';
+  let currentScenario = SCENARIOS.luna;
+
+  // ============================================================
+  // DONNÉES
+  // ============================================================
+  let ALL = currentScenario.candles;       // bougies du scénario courant
+  let START_PRICE = ALL[0].c;
+  const INITIAL_CAPITAL = 1000;
+  const INITIAL_LUNA_FRAC = 0.5;             // 50 % de départ en LUNA, 50 % en cash
+  const FEE_RATE = 0.003;                    // 0.3 % de frais par transaction
+
+  // ============================================================
+  // ÉVÉNEMENTS DU SCÉNARIO (3 moments-clés qui déclenchent une modale)
+  // Indices calculés sur les vraies données LUNA mai 2022.
+  // ============================================================
+  const EVENTS_TEXTS = {
+    luna: {
+      m1: {
+        title:{ en:'THE CRACKS APPEAR', fr:'LES PREMIÈRES FISSURES' },
+        body: { en:'LUNA just broke below $50 for the first time in months. UST is showing slight depeg. Some on Twitter call it a healthy correction. Others smell something deeper.',
+                fr:"LUNA vient de passer sous 50 $ pour la première fois en des mois. UST montre un léger décrochage. Sur Twitter, certains parlent d'une correction saine. D'autres sentent que c'est plus grave." }
+      },
+      m2: {
+        title:{ en:'THE DEATH SPIRAL', fr:'LA SPIRALE DE LA MORT' },
+        body: { en:'UST has fully depegged. LUNA supply is being printed at unprecedented speed to defend the peg. Hyperinflation is in progress. Trust evaporating.',
+                fr:"UST a totalement perdu sa parité. L'offre de LUNA est imprimée à un rythme inédit pour défendre l'ancrage. L'hyperinflation est en cours. La confiance s'évapore." }
+      },
+      m3: {
+        title:{ en:'THE FALSE HOPE', fr:'LE FAUX ESPOIR' },
+        body: { en:'After touching $0.73, LUNA suddenly doubles in a single hour. Some traders are calling a bottom. Some are calling it the ultimate trap. The market is split.',
+                fr:'Après être tombé à 0,73 $, LUNA double en une heure. Certains crient au creux. D\'autres voient le piège ultime. Le marché est divisé.' }
+      }
+    },
+    sol: {
+      m1: {
+        title:{ en:'COINDESK BREAKS THE STORY', fr:'COINDESK PUBLIE L\'ARTICLE' },
+        body: { en:"A CoinDesk article reveals that Alameda Research's balance sheet is massively composed of FTT, the token of FTX. Twitter is buzzing. Some downplay it. Others smell systemic risk. SOL barely moves.",
+                fr:"Un article de CoinDesk révèle que le bilan d'Alameda Research est composé massivement de FTT, le token de FTX. Twitter s'agite. Certains minimisent. D'autres flairent un risque systémique. SOL bouge peu." }
+      },
+      m2: {
+        title:{ en:'BINANCE PULLS THE TRIGGER', fr:'BINANCE TIRE LA GÂCHETTE' },
+        body: { en:'CZ just announced Binance is liquidating its FTT holdings. Bank run on FTX. SOL drops violently as the FTX ecosystem unravels. Withdrawals are frozen on FTX.',
+                fr:"CZ vient d'annoncer que Binance liquide ses FTT. Bank run sur FTX. SOL chute violemment alors que l'écosystème FTX s'effondre. Les retraits sont gelés sur FTX." }
+      },
+      m3: {
+        title:{ en:'THE BOTTOM?', fr:'LE CREUX ?' },
+        body: { en:'SOL has touched $12, down 67% from its peak. Some scream "buy at -70%". Others see the start of a real bear market. The fundamentals of SOL itself are intact — but contagion is real.',
+                fr:'SOL vient de toucher 12 $, soit -67 % du sommet. Certains crient "achat à -70 %". D\'autres voient le début d\'un vrai bear market. Les fondamentaux de SOL sont intacts — mais la contagion est réelle.' }
+      }
+    }
+  };
+
+  function buildEvents() {
+    const sc = currentScenario;
+    const T = EVENTS_TEXTS[sc.id];
+    return [
+      { id: sc.id + '-m1', idx: sc.eventIdx.m1, title: T.m1.title, body: T.m1.body },
+      { id: sc.id + '-m2', idx: sc.eventIdx.m2, title: T.m2.title, body: T.m2.body },
+      { id: sc.id + '-m3', idx: sc.eventIdx.m3, title: T.m3.title, body: T.m3.body }
+    ];
+  }
+
+  let EVENTS = buildEvents()
+  const MODAL_TIMER_S = 10;
+  let firedEvents = new Set();      // ids des événements déjà déclenchés (pour ne pas les rejouer)
+  let modalTimer = null;            // timeout du minuteur
+  let modalDeadline = 0;            // timestamp d'expiration
+  let modalRefreshId = null;        // interval qui rafraîchit l'affichage du minuteur
+
+  // ============================================================
+  // ÉTAT
+  // ============================================================
+  const MIN_VISIBLE = 20;
+  const MAX_VISIBLE = 200;
+  let visibleCount = 60;        // largeur de la fenêtre (zoom)
+  let idx = 0;                  // index courant dans ALL (pendant lecture)
+  let displayed = [];           // bougies déjà déroulées
+  let stopped = false;
+  let lang = 'en';
+  let phase = 'idle';            // 'idle' (avant PLAY) | 'playing' | 'finished'
+  let viewOffset = 0;           // décalage de la fenêtre depuis la fin (en mode exploration). 0 = on voit le moment courant ; positif = on recule dans le temps
+  // Portefeuille (Bloc 3a)
+  let qty = 0;                  // quantité de LUNA détenue
+  let cash = 0;                 // cash en $
+  let tradeLog = [];            // journal des trades [{t, type, pct, price, qtyDelta, cashDelta, fee}]
+  // Jauges psychologiques (Bloc 4 enrichi) — état émotionnel visible en direct
+  let psy = { stress: 0, impulse: 0, illusion: 0, lucidity: 100 };
+  let psyHistory = [];          // pour le débrief : snapshots de psy à chaque tick
+  // Analyses DoomScan
+  const ANALYZE_MAX = 3;
+  let analyzeUsesLeft = ANALYZE_MAX;
+  let analyzeLog = [];          // [{t, clue}]
+  let lastAnalysisFeedback = null;  // {text, expiresAt} pour afficher temporairement l'indice
+  let eventDecisions = [];      // journal des décisions aux moments-clés [{event, choice, t, price}]
+  // Tooltip / hover
+  let hitmap = [];              // [{ x, candle }] — positions et données des bougies actuellement visibles
+  let hoverIndex = null;        // index dans hitmap de la bougie survolée, ou null
+  let plotBounds = null;        // bornes de la zone de tracé pour les handlers
+
+  // ============================================================
+  // I18N
+  // ============================================================
+  const I18N = {
+    en: { price:'LUNA PRICE', portfolio:'PORTFOLIO VALUE', change:'CHANGE', time:'ELAPSED',
+          end:'SIMULATION COMPLETE', final:'Final capital', replay:'↻ Replay',
+          scenario:'The Terra/LUNA Collapse — May 2022',
+          ribbon:'VIRTUAL CAPITAL · PEDAGOGICAL SIMULATION · REAL BINANCE DATA',
+          day:'Day',
+          hintPlay:'Scroll / pinch to zoom',
+          hintExplore:'Scroll to zoom · drag to navigate history',
+          scrubberLabel:'Explore the timeline',
+          ttOpen:'Open', ttHigh:'High', ttLow:'Low', ttClose:'Close',
+          holdings:'LUNA HOLDINGS', cash:'CASH',
+          buy:'BUY · with cash', sell:'SELL · of LUNA',
+          fees:'Fee: 0.3% per trade',
+          modalTag:'CRITICAL EVENT', modalPrice:'PRICE', modalPort:'PORTFOLIO',
+          hold:'HOLD · do nothing',
+          analyze:'ANALYZE · DoomScan signal',
+          analyzeBtn:'RUN ANALYSIS',
+          analyzeUses:(n) => `(${n} left)`,
+          psy:'PSYCHOLOGICAL STATE',
+          stress:'Stress', impulse:'Impulsivity', illusion:'Illusion', lucidity:'Lucidity',
+          // Indices ANALYZE par scénario — calqués sur les vrais signaux on-chain et marché
+          analyzeClues_luna:{
+            early:    '⚠️ ON-CHAIN: UST stablecoin shows minor depeg (0.985). Anchor Protocol withdrawals accelerating. Reserve being drained.',
+            preCrash: '⚠️ CRITICAL: UST has fully depegged (<$0.90). LUNA being minted aggressively to defend the peg. Hyperinflation in progress.',
+            inCrash:  '⚠️ TERMINAL: Reserve depleted. Death spiral confirmed. Major exchanges halting LUNA pairs. This is not a dip.',
+            postCrash:'⚠️ DEAD: Project officially insolvent. Recovery probability near zero. Holdings are effectively worthless.'
+          },
+          analyzeClues_sol:{
+            early:    '⚠️ ON-CHAIN: Alameda holdings reportedly include $5B+ in FTT. Concentration risk if FTT loses market confidence. SOL fundamentals intact.',
+            preCrash: '⚠️ WARNING: FTX withdrawals slowing. FTT/USDT showing first signs of major wallet selling. Contagion risk rising for FTX-linked tokens including SOL.',
+            inCrash:  '⚠️ CRITICAL: Binance has cancelled the FTX acquisition. FTX seeking external funding. Withdrawals frozen. SOL price detached from fundamentals.',
+            postCrash:'⚠️ BANKRUPTCY: FTX has filed for Chapter 11. SOL fundamentals remain intact but ecosystem damaged. Historical bottoms often follow forced selling.'
+          },
+          analyzeUsedUp:'No analyses left. Decisions must come from what you already see.',
+          dbTag:'// YOUR BEHAVIORAL PROFILE',
+          dbBiasLbl:'YOUR DOMINANT BIAS',
+          dbStatsLbl:'YOUR RUN',
+          dbLessonLbl:'THE LESSON',
+          dbFinal:'Final capital', dbPnL:'P&L', dbTrades:'Trades',
+          dbFees:'Fees paid', dbRank:'Survival rank',
+          dbDownload:'Download card',
+          dbDisclaimer:'Virtual capital · pedagogical simulation · not investment advice.',
+          dbExportTxt:'Export report',
+          dbShareX:'Share on X',
+          tweetText:(biasName, rank, pnl) => `I just survived the Terra/LUNA crash on DoomSimulator.\n\nVerdict: ${biasName} · Rank ${rank} · P&L ${pnl}\n\nCan you do better? Try the simulation at doomshield.com\n\n#DoomShield #Crypto #LUNA`,
+          shareCopiedHint:'Card copied — paste it into your post.',
+          playTag:'// MISSION BRIEFING',
+          playTitle:'Survive the crash. Read the signals. Trust your eyes.',
+          playSub:'Pick your scenario above, then engage.',
+          playBtn:'ENGAGE' },
+    fr: { price:'PRIX LUNA', portfolio:'VALEUR DU PORTEFEUILLE', change:'VARIATION', time:'TEMPS ÉCOULÉ',
+          end:'FIN DE LA SIMULATION', final:'Capital final', replay:'↻ Rejouer',
+          scenario:'L\'effondrement de Terra/LUNA — Mai 2022',
+          ribbon:'CAPITAL VIRTUEL · SIMULATION PÉDAGOGIQUE · DONNÉES RÉELLES BINANCE',
+          day:'Jour',
+          hintPlay:'Molette / pincer pour zoomer',
+          hintExplore:'Molette pour zoomer · glisser pour parcourir l\'historique',
+          scrubberLabel:'Explorer la chronologie',
+          ttOpen:'Ouverture', ttHigh:'Haut', ttLow:'Bas', ttClose:'Clôture',
+          holdings:'LUNA DÉTENU', cash:'LIQUIDITÉS',
+          buy:'ACHETER · avec cash', sell:'VENDRE · du LUNA',
+          fees:'Frais : 0,3 % par opération',
+          modalTag:'ÉVÉNEMENT CRITIQUE', modalPrice:'PRIX', modalPort:'PORTEFEUILLE',
+          hold:'GARDER · ne rien faire',
+          analyze:'ANALYSER · signal DoomScan',
+          analyzeBtn:'LANCER L\'ANALYSE',
+          analyzeUses:(n) => `(${n} restantes)`,
+          psy:'ÉTAT PSYCHOLOGIQUE',
+          stress:'Stress', impulse:'Impulsivité', illusion:'Illusion', lucidity:'Lucidité',
+          analyzeClues_luna:{
+            early:    '⚠️ ON-CHAIN : UST montre un léger décrochage (0,985). Les retraits d\'Anchor Protocol s\'accélèrent. La réserve se vide.',
+            preCrash: '⚠️ CRITIQUE : UST a totalement perdu sa parité (<0,90 $). LUNA est imprimé massivement pour défendre l\'ancrage. Hyperinflation en cours.',
+            inCrash:  '⚠️ TERMINAL : Réserve épuisée. Spirale de mort confirmée. Les grandes plateformes suspendent les paires LUNA. Ce n\'est pas un creux.',
+            postCrash:'⚠️ MORT : Projet officiellement insolvable. Probabilité de récupération quasi nulle. Tes holdings sont effectivement sans valeur.'
+          },
+          analyzeClues_sol:{
+            early:    '⚠️ ON-CHAIN : Le bilan d\'Alameda contiendrait plus de 5 Md$ en FTT. Risque de concentration si FTT perd la confiance du marché. Les fondamentaux de SOL sont intacts.',
+            preCrash: '⚠️ ALERTE : Les retraits FTX ralentissent. FTT/USDT montre les premiers signes de ventes massives. Risque de contagion élevé pour les tokens liés à FTX, dont SOL.',
+            inCrash:  '⚠️ CRITIQUE : Binance a annulé l\'acquisition de FTX. FTX cherche un financement externe. Les retraits sont gelés. Le prix de SOL est détaché de ses fondamentaux.',
+            postCrash:'⚠️ FAILLITE : FTX a déposé le bilan (Chapter 11). Les fondamentaux de SOL restent intacts mais l\'écosystème est endommagé. Les vrais creux suivent souvent une vente forcée.'
+          },
+          analyzeUsedUp:'Plus d\'analyses disponibles. Les décisions doivent venir de ce que tu vois déjà.',
+          dbTag:'// TON PROFIL COMPORTEMENTAL',
+          dbBiasLbl:'TON BIAIS DOMINANT',
+          dbStatsLbl:'TA PARTIE',
+          dbLessonLbl:'LA LEÇON',
+          dbFinal:'Capital final', dbPnL:'Gain/Perte', dbTrades:'Opérations',
+          dbFees:'Frais payés', dbRank:'Rang de survie',
+          dbDownload:'Télécharger la carte',
+          dbDisclaimer:'Capital virtuel · simulation pédagogique · aucun conseil en investissement.',
+          dbExportTxt:'Exporter le rapport',
+          dbShareX:'Partager sur X',
+          tweetText:(biasName, rank, pnl) => `Je viens de survivre au crash Terra/LUNA sur DoomSimulator.\n\nVerdict : ${biasName} · Rang ${rank} · P&L ${pnl}\n\nTu peux faire mieux ? Tente la simulation sur doomshield.com\n\n#DoomShield #Crypto #LUNA`,
+          shareCopiedHint:'Carte copiée — colle-la dans ton post.',
+          playTag:'// BRIEFING DE MISSION',
+          playTitle:'Survis au crash. Lis les signaux. Fais confiance à tes yeux.',
+          playSub:'Choisis ton scénario ci-dessus, puis engage.',
+          playBtn:'ENGAGER' }
+  };
+  function applyLang() {
+    const t = I18N[lang];
+    document.getElementById('lbl-price').textContent = t.price;
+    document.getElementById('lbl-portfolio').textContent = t.portfolio;
+    document.getElementById('lbl-change').textContent = t.change;
+    document.getElementById('lbl-time').textContent = t.time;
+    document.getElementById('lbl-end').textContent = t.end;
+    document.getElementById('replay').textContent = t.replay;
+    document.getElementById('scenario-label').textContent = currentScenario.labelLong[lang];
+    // Sélecteur de scénario : labels selon la langue
+    const scSelect = document.getElementById('scen-select');
+    if (scSelect) {
+      Array.from(scSelect.options).forEach(opt => {
+        const sc = SCENARIOS[opt.value];
+        if (sc) opt.textContent = sc.label[lang];
+      });
+      document.getElementById('lbl-scen-select').firstChild.nodeValue =
+        (lang === 'fr' ? 'Scénario : ' : 'Scenario: ');
+    }
+    // Reconstruire le ribbon en préservant le compteur de tick
+    const currentTick = document.getElementById('tick-now')?.textContent || '0';
+    const totalTicks = document.getElementById('tick-total')?.textContent || ALL.length;
+    document.querySelector('.ribbon').innerHTML =
+      t.ribbon.replace(/^([^·]+)/, '<b>$1</b>') +
+      ' · <span class="tick-counter">TICK <span id="tick-now">' + currentTick + '</span> / <span id="tick-total">' + totalTicks + '</span></span>';
+    document.getElementById('zoom-hint').textContent = phase === 'finished' ? t.hintExplore : t.hintPlay;
+    document.getElementById('scrubber-label').textContent = t.scrubberLabel;
+    document.getElementById('lbl-holdings').textContent = t.holdings;
+    document.getElementById('lbl-cash').textContent = t.cash;
+    document.getElementById('lbl-buy').textContent = t.buy;
+    document.getElementById('lbl-sell').textContent = t.sell;
+    document.getElementById('fees-hint').textContent = t.fees;
+    document.getElementById('lbl-analyze').textContent = t.analyze;
+    document.getElementById('lbl-psy').textContent = t.psy;
+    document.getElementById('lbl-stress').textContent = t.stress;
+    document.getElementById('lbl-impulse').textContent = t.impulse;
+    document.getElementById('lbl-illusion').textContent = t.illusion;
+    document.getElementById('lbl-lucidity').textContent = t.lucidity;
+    document.getElementById('db-export-txt-lbl').textContent = t.dbExportTxt;
+    document.getElementById('db-share-x-lbl').textContent = t.dbShareX;
+    document.getElementById('play-overlay-tag').textContent = t.playTag;
+    document.getElementById('play-overlay-title').textContent = t.playTitle;
+    document.getElementById('play-overlay-sub').textContent = t.playSub;
+    document.getElementById('play-btn-label').textContent = t.playBtn;
+    // Bouton ANALYZE : texte + compteur d'utilisations
+    document.querySelector('#analyze-btn').childNodes[0].nodeValue = t.analyzeBtn + ' ';
+    document.getElementById('analyze-uses').textContent = t.analyzeUses(analyzeUsesLeft);
+  }
+
+  // ============================================================
+  // CANVAS / RENDU
+  // ============================================================
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  function fitCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const r = canvas.getBoundingClientRect();
+    canvas.width = r.width * dpr;
+    canvas.height = r.height * dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', () => { fitCanvas(); draw(); });
+
+  function draw() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0,0,w,h);
+
+    // marges
+    const padL = 56, padR = 12, padT = 14, padB = 28;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    // fenêtre visible : on prend `visibleCount` bougies se terminant à `displayed.length - viewOffset`
+    const endIdx = Math.max(0, displayed.length - viewOffset);
+    const startIdx = Math.max(0, endIdx - visibleCount);
+    const window_ = displayed.slice(startIdx, endIdx);
+    if (window_.length === 0) return;
+
+    // Échelle Y : LOG sur le min/max de la fenêtre visible, avec un peu de marge
+    let lo = Infinity, hi = -Infinity;
+    for (const c of window_) {
+      if (c.l < lo) lo = c.l;
+      if (c.h > hi) hi = c.h;
+    }
+    // Sécurité log : éviter zéro
+    lo = Math.max(lo, 1e-6);
+    hi = Math.max(hi, lo * 1.0001);
+    const logLo = Math.log10(lo);
+    const logHi = Math.log10(hi);
+    const logSpan = (logHi - logLo) || 1;
+    // marge verticale 8% haut/bas
+    const marg = logSpan * 0.08;
+    const yLo = logLo - marg;
+    const yHi = logHi + marg;
+
+    function yOf(price) {
+      const lp = Math.log10(Math.max(price, 1e-6));
+      const ratio = (lp - yLo) / (yHi - yLo);
+      return padT + (1 - ratio) * plotH;
+    }
+
+    // grille horizontale (puissances de 10 dans la zone visible)
+    ctx.strokeStyle = '#1E3047';
+    ctx.lineWidth = 1;
+    ctx.font = '11px Poppins, sans-serif';
+    ctx.fillStyle = '#8AA0B4';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    // labels aux puissances de 10
+    const lowDecade = Math.floor(yLo);
+    const highDecade = Math.ceil(yHi);
+    for (let d = lowDecade; d <= highDecade; d++) {
+      const price = Math.pow(10, d);
+      const y = yOf(price);
+      if (y < padT - 2 || y > h - padB + 2) continue;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      let label;
+      if (price >= 1) label = price.toFixed(0);
+      else if (price >= 0.01) label = price.toFixed(2);
+      else label = price.toExponential(0);
+      ctx.fillText(label, padL - 6, y);
+    }
+
+    // axe X : labels de date espacés (premier, milieu, dernier)
+    const xOf = (i) => padL + (i + 0.5) * (plotW / visibleCount);
+    function dateLabel(ms) {
+      const d = new Date(ms);
+      const months = lang==='fr'
+        ? ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']
+        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${d.getUTCDate()} ${months[d.getUTCMonth()]}`;
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const tickIdx = [0, Math.floor(visibleCount/3), Math.floor(2*visibleCount/3), visibleCount-1];
+    for (const ti of tickIdx) {
+      if (ti >= window_.length) continue;
+      const c = window_[ti];
+      ctx.fillText(dateLabel(c.t), xOf(ti), h - padB + 6);
+    }
+
+    // bougies
+    const candleW = (plotW / visibleCount) * 0.7;
+    // hitmap : pour chaque bougie visible, on stocke sa position X et ses données
+    hitmap = [];
+    for (let i = 0; i < window_.length; i++) {
+      const c = window_[i];
+      const x = xOf(i);
+      const yO = yOf(c.o), yC = yOf(c.c), yH = yOf(c.h), yL = yOf(c.l);
+      const bull = c.c >= c.o;
+      ctx.strokeStyle = bull ? '#34D399' : '#FF3864';
+      ctx.fillStyle   = bull ? '#34D399' : '#FF3864';
+      // mèche
+      ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+      // corps
+      const top = Math.min(yO, yC);
+      const bodyH = Math.max(1, Math.abs(yC - yO));
+      ctx.fillRect(x - candleW/2, top, candleW, bodyH);
+      hitmap.push({ x, candle: c });
+    }
+    // Mémoriser les bornes du plot pour les handlers souris
+    plotBounds = { padL, padR, padT, padB, plotW, plotH, w, h };
+
+    // Crosshair vertical à la bougie survolée
+    if (hoverIndex !== null && hoverIndex >= 0 && hoverIndex < hitmap.length) {
+      const hx = hitmap[hoverIndex].x;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(45,226,230,0.45)'; // cyan transparent
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(hx, padT);
+      ctx.lineTo(hx, h - padB);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // Resynchroniser le hover si la bougie a changé d'index ou est sortie de la fenêtre
+    if (typeof syncHoverAfterDraw === 'function') syncHoverAfterDraw();
+  }
+
+  // ============================================================
+  // PORTEFEUILLE — actions du joueur
+  // ============================================================
+  function currentPrice() {
+    if (displayed.length === 0) return START_PRICE;
+    return displayed[displayed.length - 1].c;
+  }
+  function totalValue() {
+    return cash + qty * currentPrice();
+  }
+  function doTrade(action, pctStr) {
+    if (phase !== 'playing') return;
+    const pct = parseInt(pctStr, 10) / 100;
+    const price = currentPrice();
+    let trade = null;
+    if (action === 'buy') {
+      // dépense pct du CASH disponible (frais déduits du montant brut)
+      const gross = cash * pct;
+      if (gross <= 0) return;
+      const fee = gross * FEE_RATE;
+      const net = gross - fee;
+      const qtyBought = net / price;
+      cash -= gross;
+      qty += qtyBought;
+      trade = { t: displayed[displayed.length-1].t, type:'buy', pct, price, qtyDelta:+qtyBought, cashDelta:-gross, fee };
+    } else if (action === 'sell') {
+      // vend pct de la QUANTITÉ LUNA détenue
+      const qtySold = qty * pct;
+      if (qtySold <= 0) return;
+      const gross = qtySold * price;
+      const fee = gross * FEE_RATE;
+      const net = gross - fee;
+      qty -= qtySold;
+      cash += net;
+      trade = { t: displayed[displayed.length-1].t, type:'sell', pct, price, qtyDelta:-qtySold, cashDelta:+net, fee };
+    }
+    if (trade) {
+      tradeLog.push(trade);
+      updatePsyAfterTrade(action, parseInt(pctStr,10));
+      updateStats();
+    }
+  }
+  function updateButtonsState() {
+    // Boutons buy désactivés si cash = 0, boutons sell désactivés si qty = 0
+    document.querySelectorAll('.abtn.buy').forEach(b => { b.disabled = (cash <= 0.0001 || phase !== 'playing'); });
+    document.querySelectorAll('.abtn.sell').forEach(b => { b.disabled = (qty <= 1e-9 || phase !== 'playing'); });
+    document.getElementById('analyze-btn').disabled = (analyzeUsesLeft <= 0 || phase !== 'playing');
+    document.getElementById('analyze-uses').textContent = I18N[lang].analyzeUses(analyzeUsesLeft);
+  }
+
+  // ============================================================
+  // JAUGES PSYCHOLOGIQUES — état émotionnel visible en direct
+  // (montre au joueur l'effet de ses actions, ne prend JAMAIS le contrôle)
+  // ============================================================
+  function clampPsy() {
+    psy.stress = Math.max(0, Math.min(100, psy.stress));
+    psy.impulse = Math.max(0, Math.min(100, psy.impulse));
+    psy.illusion = Math.max(0, Math.min(100, psy.illusion));
+    psy.lucidity = Math.max(0, Math.min(100, psy.lucidity));
+  }
+  function renderPsy() {
+    clampPsy();
+    document.getElementById('stress-fill').style.width = psy.stress + '%';
+    document.getElementById('stress-val').textContent = Math.round(psy.stress) + '%';
+    document.getElementById('impulse-fill').style.width = psy.impulse + '%';
+    document.getElementById('impulse-val').textContent = Math.round(psy.impulse) + '%';
+    document.getElementById('illusion-fill').style.width = psy.illusion + '%';
+    document.getElementById('illusion-val').textContent = Math.round(psy.illusion) + '%';
+    document.getElementById('lucidity-fill').style.width = psy.lucidity + '%';
+    document.getElementById('lucidity-val').textContent = Math.round(psy.lucidity) + '%';
+  }
+  function updatePsyAfterTrade(action, pct) {
+    // Chaque trade ajoute à l'impulsivité ; vendre sous le prix moyen ajoute du stress (perte réalisée)
+    // Acheter pendant une chute ajoute de l'illusion (illusion d'attraper le creux)
+    if (action === 'sell') {
+      psy.impulse += 7;
+      psy.stress = Math.max(0, psy.stress - 4); // un peu de relâche après une vente
+    } else if (action === 'buy') {
+      psy.impulse += 5;
+      // Si on achète alors que le prix est nettement sous son sommet récent → illusion forte
+      const recent = displayed.slice(-30);
+      if (recent.length > 5) {
+        const recentMax = Math.max(...recent.map(c => c.c));
+        const now = currentPrice();
+        if (now < recentMax * 0.7) psy.illusion += 12; // "j'achète le creux"
+      }
+    }
+    clampPsy(); renderPsy();
+  }
+  function updatePsyPassive() {
+    // À chaque tick : le marché agit sur la psy même sans action du joueur.
+    if (displayed.length < 2) return;
+    const last = displayed[displayed.length - 1].c;
+    const prev = displayed[displayed.length - 2].c;
+    const variation = (last - prev) / prev;
+    // Forte baisse → stress + perte de lucidité
+    if (variation < -0.05) {
+      psy.stress += Math.min(8, Math.abs(variation) * 100);
+      psy.lucidity = Math.max(0, psy.lucidity - 2);
+    }
+    // Forte hausse (faux rebond) → illusion
+    if (variation > 0.05) {
+      psy.illusion += Math.min(6, variation * 100);
+    }
+    // P&L latent : grosse perte non réalisée = stress
+    const port = totalValue();
+    const loss = (port / INITIAL_CAPITAL) - 1;
+    if (loss < -0.3) psy.stress = Math.max(psy.stress, 60 + Math.abs(loss) * 30);
+    // Détente lente
+    psy.impulse = Math.max(0, psy.impulse - 0.3);
+    psy.lucidity = Math.min(100, psy.lucidity + 0.1);
+    clampPsy();
+    // Snapshot pour le débrief (chaque 5 ticks)
+    if (displayed.length % 5 === 0) {
+      psyHistory.push({ idx: displayed.length, ...psy });
+    }
+    renderPsy();
+  }
+
+  // ============================================================
+  // ANALYZE — révèle un indice contextuel basé sur ce que DoomScan révélerait
+  // ============================================================
+  function doAnalyze() {
+    if (phase !== 'playing') return;
+    if (analyzeUsesLeft <= 0) return;
+    analyzeUsesLeft--;
+    // Effet psy : ANALYZE est une action lucide
+    psy.lucidity = Math.min(100, psy.lucidity + 20);
+    psy.impulse = Math.max(0, psy.impulse - 10);
+    psy.illusion = Math.max(0, psy.illusion - 8);
+    clampPsy(); renderPsy();
+    // Choisir l'indice selon le moment du crash
+    const t = I18N[lang];
+    const i = displayed.length;
+    let key;
+    const bnds = currentScenario.analyzeBoundaries;
+    if (i < bnds.early)        key = 'early';      // avant la première fissure
+    else if (i < bnds.preCrash) key = 'preCrash';   // pré-crash
+    else if (i < bnds.inCrash)  key = 'inCrash';    // pendant
+    else                        key = 'postCrash'; // après
+    const cluesKey = 'analyzeClues_' + currentScenario.id;
+    const clue = t[cluesKey][key];
+    analyzeLog.push({ idx: i, key, clue });
+    // Afficher l'indice dans une infobulle temporaire (5 secondes)
+    showAnalyzeFeedback(clue);
+    updateButtonsState();
+  }
+  function showAnalyzeFeedback(text) {
+    let el = document.getElementById('analyze-feedback');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'analyze-feedback';
+      el.className = 'analyze-feedback';
+      document.getElementById('chart-panel').appendChild(el);
+    }
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => el.classList.remove('show'), 7000);
+  }
+
+  // ============================================================
+  // FORMATEURS
+  // ============================================================
+  function fmtPrice(p) {
+    if (p >= 1) return '$' + p.toFixed(2);
+    if (p >= 0.01) return '$' + p.toFixed(4);
+    if (p >= 0.0001) return '$' + p.toFixed(6);
+    return '$' + p.toExponential(2);
+  }
+  function fmtMoney(v) {
+    if (v >= 1) return '$' + v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    if (v >= 0.01) return '$' + v.toFixed(4);
+    return '$' + v.toExponential(2);
+  }
+  function dayLabel(t0, tNow) {
+    const ms = tNow - t0;
+    const day = Math.floor(ms / 86400000) + 1;
+    const d = new Date(tNow);
+    const months = lang==='fr'
+      ? ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']
+      : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${I18N[lang].day} ${day} · ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }
+
+  // ============================================================
+  // STATS RIGHT PANEL
+  // ============================================================
+  function updateStats() {
+    if (displayed.length === 0) return;
+    const c = displayed[displayed.length - 1];
+    const price = c.c;
+    const portfolio = cash + qty * price;
+    const change = (portfolio / INITIAL_CAPITAL - 1) * 100;
+    document.getElementById('price').textContent = fmtPrice(price);
+    document.getElementById('portfolio').textContent = fmtMoney(portfolio);
+    const chEl = document.getElementById('change');
+    chEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(2) + '%';
+    chEl.classList.remove('danger','warn','safe');
+    chEl.classList.add(change >= 0 ? 'safe' : 'danger');
+
+    const portEl = document.getElementById('portfolio');
+    portEl.classList.remove('danger','warn','safe');
+    portEl.classList.add(change >= 0 ? 'safe' : 'danger');
+
+    // Holdings : quantité LUNA (formatage selon ordre de grandeur)
+    const holdEl = document.getElementById('holdings');
+    let qtyStr;
+    if (qty === 0) qtyStr = '0';
+    else if (qty >= 1000) qtyStr = qty.toLocaleString(undefined, {maximumFractionDigits:0});
+    else if (qty >= 1) qtyStr = qty.toFixed(2);
+    else if (qty >= 0.01) qtyStr = qty.toFixed(4);
+    else qtyStr = qty.toExponential(2);
+    holdEl.innerHTML = qtyStr + ' <span class="unit">LUNA</span>';
+
+    // Cash
+    document.getElementById('cash').textContent = fmtMoney(cash);
+
+    document.getElementById('elapsed').textContent = dayLabel(ALL[0].t, c.t);
+    updateButtonsState();
+  }
+
+  // ============================================================
+  // BOUCLE DE DÉROULÉ
+  // ============================================================
+  function step() {
+    if (stopped || idx >= ALL.length) {
+      if (idx >= ALL.length) end();
+      return;
+    }
+    // calcul de volatilité locale (variation depuis la bougie précédente)
+    let vol = 0;
+    if (idx > 0) {
+      const prev = ALL[idx - 1].c;
+      vol = Math.abs(ALL[idx].c - prev) / prev;
+    }
+    // saut + délai selon volatilité (modulé par le speedFactor du scénario)
+    let skip, delay;
+    if (vol < VOLATILITY_CALM_THRESHOLD) { skip = SKIP_WHEN_CALM; delay = DELAY_CALM_MS; }
+    else if (vol < VOLATILITY_STRONG_THRESHOLD) { skip = SKIP_WHEN_MID; delay = DELAY_MID_MS; }
+    else { skip = SKIP_WHEN_STRONG; delay = DELAY_STRONG_MS; }
+    delay = Math.round(delay * (currentScenario.speedFactor || 1));
+
+    displayed.push(ALL[idx]);
+    const reachedIdx = idx;
+    idx += skip;
+
+    updateStats();
+    updatePsyPassive();           // jauges évoluent passivement avec le marché
+    document.getElementById('tick-now').textContent = displayed.length;
+    draw();
+
+    // Détecter si on vient de franchir un événement-clé : on déclenche dès que reachedIdx >= ev.idx
+    for (const ev of EVENTS) {
+      if (!firedEvents.has(ev.id) && reachedIdx >= ev.idx) {
+        firedEvents.add(ev.id);
+        openEventModal(ev);
+        return; // step est mis en pause, sera relancé par closeEventModal
+      }
+    }
+
+    setTimeout(step, delay);
+  }
+
+  // ============================================================
+  // SYSTÈME DE MODALE DE DÉCISION
+  // ============================================================
+  function openEventModal(ev) {
+    const t = I18N[lang];
+    const price = currentPrice();
+    const portfolio = totalValue();
+    document.getElementById('modal-tag').textContent = t.modalTag;
+    document.getElementById('modal-title').textContent = ev.title[lang];
+    document.getElementById('modal-body').textContent = ev.body[lang];
+    document.getElementById('ms-lbl-price').textContent = t.modalPrice;
+    document.getElementById('ms-lbl-port').textContent = t.modalPort;
+    document.getElementById('ms-price').textContent = fmtPrice(price);
+    document.getElementById('ms-port').textContent = fmtMoney(portfolio);
+    document.getElementById('ma-buy-label').textContent = t.buy;
+    document.getElementById('ma-sell-label').textContent = t.sell;
+    document.getElementById('modal-hold').textContent = t.hold;
+
+    // Activer/désactiver selon cash et qty
+    document.querySelectorAll('.modal-act.buy').forEach(b => b.disabled = (cash <= 0.0001));
+    document.querySelectorAll('.modal-act.sell').forEach(b => b.disabled = (qty <= 1e-9));
+
+    // Mémoriser l'événement courant pour journaliser le choix
+    document.getElementById('modal-backdrop').dataset.event = ev.id;
+    document.getElementById('modal-backdrop').classList.add('show');
+
+    // Lancer le minuteur
+    modalDeadline = Date.now() + MODAL_TIMER_S * 1000;
+    const fill = document.getElementById('modal-timer-fill');
+    const cd = document.getElementById('modal-countdown');
+    fill.style.transform = 'scaleX(1)';
+    cd.textContent = MODAL_TIMER_S;
+    if (modalRefreshId) clearInterval(modalRefreshId);
+    modalRefreshId = setInterval(() => {
+      const remain = Math.max(0, modalDeadline - Date.now());
+      const ratio = remain / (MODAL_TIMER_S * 1000);
+      fill.style.transform = `scaleX(${ratio})`;
+      cd.textContent = Math.ceil(remain / 1000);
+      if (remain <= 0) {
+        closeEventModal('timeout');
+      }
+    }, 100);
+  }
+
+  function closeEventModal(choice) {
+    // choice : 'timeout' | 'hold' | 'buy:25' | 'sell:50' ... etc
+    const eventId = document.getElementById('modal-backdrop').dataset.event;
+    if (modalRefreshId) { clearInterval(modalRefreshId); modalRefreshId = null; }
+    document.getElementById('modal-backdrop').classList.remove('show');
+    // Journaliser la décision (utile pour l'analyse du biais)
+    eventDecisions.push({ event: eventId, choice, t: displayed[displayed.length-1].t, price: currentPrice() });
+    // Reprendre le déroulé
+    setTimeout(step, 200);
+  }
+
+  // Branchement des boutons de la modale
+  document.querySelectorAll('.modal-act').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      const pct = btn.dataset.pct;
+      doTrade(action, pct);
+      closeEventModal(`${action}:${pct}`);
+    });
+  });
+  document.getElementById('modal-hold').addEventListener('click', () => {
+    closeEventModal('hold');
+  });
+
+
+  function end() {
+    phase = 'finished';
+    const finalCapital = totalValue();
+    document.getElementById('final-line').textContent =
+      `${I18N[lang].final}: ${fmtMoney(finalCapital)}`;
+    document.getElementById('endcard').classList.add('show');
+    document.getElementById('scrubber-wrap').classList.add('show');
+    document.getElementById('zoom-hint').textContent = I18N[lang].hintExplore;
+    // initialiser le scrubber : à fond à droite = présent
+    const sc = document.getElementById('scrubber');
+    sc.max = Math.max(0, displayed.length - 1);
+    sc.value = sc.max;
+    updateButtonsState();
+    // Lancer le débrief : analyse du biais + carte
+    setTimeout(openDebrief, 600);
+  }
+
+  // ============================================================
+  // BIAIS COMPORTEMENTAUX (Bloc 4)
+  // Chaque biais a : une règle qui le détecte sur tradeLog/eventDecisions,
+  // un nom, une description, et une leçon — bilingues.
+  // ============================================================
+  const BIASES = {
+    panic: {
+      key: 'panic',
+      name: { en:'Panic Seller', fr:'Vendeur paniqué' },
+      desc: {
+        en:"You sold heavily during the crash. Your loss aversion took over: protecting yourself from further pain became more important than holding a position you might rationally re-evaluate.",
+        fr:"Tu as vendu massivement pendant le crash. Ton aversion à la perte a pris le dessus : te protéger d'une douleur plus grande est devenu plus important qu'évaluer ta position rationnellement."
+      },
+      lesson: {
+        en:"Panic selling locks in losses. The hardest skill in crypto is doing nothing when everyone screams. A position size set BEFORE the storm beats any decision made DURING it.",
+        fr:"Vendre en panique fige les pertes. La compétence la plus dure en crypto est de ne rien faire quand tout le monde hurle. Une taille de position fixée AVANT la tempête vaut mieux que toute décision prise PENDANT."
+      }
+    },
+    diamond: {
+      key: 'diamond',
+      name: { en:'Diamond Hands', fr:'Mains de diamant' },
+      desc: {
+        en:"You held through the entire collapse without selling. Whether out of conviction, denial, or paralysis, you let your LUNA bag go to zero. The market doesn't reward loyalty.",
+        fr:"Tu as tout gardé pendant tout l'effondrement, sans vendre. Par conviction, déni ou paralysie, tu as laissé ton sac LUNA partir à zéro. Le marché ne récompense pas la loyauté."
+      },
+      lesson: {
+        en:"Holding is a strategy, not a religion. When the fundamentals of a project break (UST losing its peg), the cult of HODL becomes a slow-motion suicide. Cut, then think.",
+        fr:"Tenir est une stratégie, pas une religion. Quand les fondamentaux d'un projet cassent (UST perdant sa parité), le culte du HODL devient un suicide au ralenti. Couper, puis réfléchir."
+      }
+    },
+    averagedown: {
+      key: 'averagedown',
+      name: { en:'Falling Knife Catcher', fr:'Attrapeur de couteau qui tombe' },
+      desc: {
+        en:"You bought during the descent — multiple times. 'It can't go lower' is the most expensive sentence in finance. You averaged down into a dying asset.",
+        fr:"Tu as acheté pendant la chute — plusieurs fois. « Ça peut pas baisser plus » est la phrase la plus chère de la finance. Tu as moyenné à la baisse dans un actif mourant."
+      },
+      lesson: {
+        en:"Averaging down is rational for a HEALTHY asset that overshot. It's catastrophic for an asset where the fundamentals collapsed. Always ask: WHY is the price falling?",
+        fr:"Moyenner à la baisse est rationnel pour un actif SAIN qui a sur-corrigé. C'est catastrophique pour un actif dont les fondamentaux se sont effondrés. Toujours se demander : POURQUOI le prix baisse ?"
+      }
+    },
+    overtrade: {
+      key: 'overtrade',
+      name: { en:'Compulsive Trader', fr:'Trader compulsif' },
+      desc: {
+        en:"You traded many times. Every click cost you 0.3% in fees. Your need to 'do something' bled your portfolio independently of the market — the market just finished the job.",
+        fr:"Tu as tradé beaucoup. Chaque clic t'a coûté 0,3 % en frais. Ton besoin de « faire quelque chose » a saigné ton portefeuille indépendamment du marché — le marché a juste fini le travail."
+      },
+      lesson: {
+        en:"Activity feels productive. It rarely is. The best traders sit still 90% of the time. If you trade because you're anxious, your anxiety is the position you should close — not the trade.",
+        fr:"L'activité donne l'impression d'être productif. Elle l'est rarement. Les meilleurs traders restent immobiles 90 % du temps. Si tu trades parce que tu es anxieux, c'est l'anxiété que tu dois fermer — pas le trade."
+      }
+    },
+    survivor: {
+      key: 'survivor',
+      name: { en:'Survivor', fr:'Survivant' },
+      desc: {
+        en:"You cut your position before it was too late. Whether by lucky timing or cold judgment, you didn't ride a zero. In a market where 99% lost everything, you kept something. Respect.",
+        fr:"Tu as coupé ta position avant qu'il ne soit trop tard. Par chance ou par jugement froid, tu n'as pas surfé jusqu'à zéro. Dans un marché où 99 % ont tout perdu, tu as gardé quelque chose. Respect."
+      },
+      lesson: {
+        en:"Survival > performance. In crypto, not blowing up is 80% of long-term success. You don't need to predict the future — you need a rule that gets you out before the future becomes a fact.",
+        fr:"Survivre > performer. En crypto, ne pas exploser, c'est 80 % du succès long-terme. Tu n'as pas besoin de prédire l'avenir — tu as besoin d'une règle qui te sort avant que l'avenir devienne un fait."
+      }
+    }
+  };
+
+  // Détection du biais dominant à partir du journal
+  function detectBias() {
+    const finalCap = totalValue();
+    const pnl = (finalCap / INITIAL_CAPITAL) - 1;
+    const nTrades = tradeLog.length;
+    const sells = tradeLog.filter(t => t.type === 'sell');
+    const buys = tradeLog.filter(t => t.type === 'buy');
+    // Bornes de "période de crash" — dépendent du scénario courant
+    const CRASH_START_T = ALL[currentScenario.crashStartIdx].t;
+    const CRASH_END_T = ALL[currentScenario.crashEndIdx].t;
+    const buysAfterCrash = buys.filter(b => b.t >= CRASH_START_T);
+    const sellsDuringCrash = sells.filter(s => s.t >= CRASH_START_T && s.t <= CRASH_END_T);
+
+    // SURVIVOR : a vendu pendant le crash ET a gardé > 50 % du capital initial
+    if (sellsDuringCrash.length > 0 && finalCap > 500) {
+      return BIASES.survivor;
+    }
+    // OVERTRADE : a fait plus de 8 trades au total
+    if (nTrades >= 8) {
+      return BIASES.overtrade;
+    }
+    // AVERAGEDOWN : a acheté au moins 2 fois après la chute initiale
+    if (buysAfterCrash.length >= 2) {
+      return BIASES.averagedown;
+    }
+    // PANIC : a vendu au moins 75% de sa position pendant le crash
+    const sellPctCrash = sellsDuringCrash.reduce((s, t) => s + t.pct, 0);
+    if (sellPctCrash >= 0.75) {
+      return BIASES.panic;
+    }
+    // DIAMOND par défaut : a peu/rien vendu pendant le crash
+    return BIASES.diamond;
+  }
+
+  function survivalRank(finalCap) {
+    // Rang de survie, calibré sur le drame du scénario LUNA (où "ne rien faire" = perdre 50 %)
+    const pct = finalCap / INITIAL_CAPITAL;       // 1.0 = capital intact, 0.5 = 50 % perdu
+    if (pct < 0.10) return 'F';                   // perdu plus de 90 %
+    if (pct < 0.25) return 'D';                   // perdu plus de 75 %
+    if (pct < 0.50) return 'C';                   // perdu plus de 50 %
+    if (pct < 0.80) return 'B';                   // perdu plus de 20 %
+    if (pct < 1.00) return 'A';                   // perdu moins de 20 %
+    return 'S';                                   // a gagné
+  }
+
+  function openDebrief() {
+    const t = I18N[lang];
+    const bias = detectBias();
+    const finalCap = totalValue();
+    const pnl = ((finalCap / INITIAL_CAPITAL) - 1) * 100;
+    const totalFees = tradeLog.reduce((s, x) => s + (x.fee || 0), 0);
+    const rank = survivalRank(finalCap);
+
+    document.getElementById('db-tag').textContent = t.dbTag;
+    document.getElementById('db-bias-lbl').textContent = t.dbBiasLbl;
+    document.getElementById('db-stats-lbl').textContent = t.dbStatsLbl;
+    document.getElementById('db-lesson-lbl').textContent = t.dbLessonLbl;
+    document.getElementById('db-download-lbl').textContent = t.dbDownload;
+    document.getElementById('db-disclaimer').textContent = t.dbDisclaimer;
+
+    document.getElementById('db-bias-name').textContent = bias.name[lang];
+    document.getElementById('db-bias-desc').textContent = bias.desc[lang];
+    document.getElementById('db-lesson').textContent = bias.lesson[lang];
+
+    document.getElementById('rs-lbl-final').textContent = t.dbFinal;
+    document.getElementById('rs-lbl-pnl').textContent = t.dbPnL;
+    document.getElementById('rs-lbl-trades').textContent = t.dbTrades;
+    document.getElementById('rs-lbl-fees').textContent = t.dbFees;
+    document.getElementById('rs-lbl-rank').textContent = t.dbRank;
+
+    document.getElementById('rs-final').textContent = fmtMoney(finalCap);
+    document.getElementById('rs-pnl').textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%';
+    document.getElementById('rs-pnl').style.color = pnl >= 0 ? 'var(--safe)' : 'var(--danger)';
+    document.getElementById('rs-trades').textContent = tradeLog.length;
+    document.getElementById('rs-fees').textContent = fmtMoney(totalFees);
+    document.getElementById('rs-rank').textContent = rank;
+
+    // Générer la carte partageable
+    drawShareCard({ bias, finalCap, pnl, rank, trades: tradeLog.length });
+
+    document.getElementById('debrief-backdrop').classList.add('show');
+
+    // === HOOK BACKEND : envoyer le résumé de la partie à la page parente (Lovable) ===
+    // Si le jeu tourne dans un iframe, postMessage relaie le résultat au parent qui l'enregistre en base.
+    // En usage standalone (pas d'iframe), le hook s'exécute mais n'a aucun effet visible.
+    try {
+      const payload = {
+        scenario_id: currentScenarioId,        // 'luna' | 'sol'
+        bias_key: bias.key,                     // 'diamond' | 'panic' | 'survivor' | 'dipBuyer' | 'overtrader'
+        bias_name: bias.name[lang],             // nom localisé
+        rank: rank,                             // 'S' | 'A' | 'B' | 'C' | 'D' | 'F'
+        final_capital: +finalCap.toFixed(2),
+        pnl_percent: +pnl.toFixed(2),
+        trades_count: tradeLog.length,
+        fees_paid: +totalFees.toFixed(2),
+        analyses_used: ANALYZE_MAX - analyzeUsesLeft,
+        lang: lang,
+        played_at: new Date().toISOString()
+      };
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'doomsim:gameEnd', payload }, '*');
+      }
+    } catch (_) { /* silencieux : ne doit jamais casser le jeu */ }
+  }
+
+  // ============================================================
+  // CARTE PARTAGEABLE (Bloc 5)
+  // ============================================================
+  function drawShareCard({ bias, finalCap, pnl, rank, trades }) {
+    const cv = document.getElementById('share-card');
+    const cx = cv.getContext('2d');
+    const W = cv.width, H = cv.height;          // 1080×1080
+    const t = I18N[lang];
+
+    // ============ FOND ============
+    const bg = cx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#0E1A30');
+    bg.addColorStop(1, '#080F1F');
+    cx.fillStyle = bg;
+    cx.fillRect(0, 0, W, H);
+
+    // Grille tactique
+    cx.strokeStyle = 'rgba(45,226,230,0.04)';
+    cx.lineWidth = 1;
+    for (let x = 0; x <= W; x += 60) { cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, H); cx.stroke(); }
+    for (let y = 0; y <= H; y += 60) { cx.beginPath(); cx.moveTo(0, y); cx.lineTo(W, y); cx.stroke(); }
+
+    // ============ EN-TÊTE ============
+    cx.font = '700 32px Orbitron, sans-serif';
+    cx.fillStyle = '#EAF2F8';
+    cx.fillText('// DOOMSIMULATOR', 64, 88);
+    cx.font = '500 13px Orbitron, sans-serif';
+    cx.fillStyle = '#2DE2E6';
+    cx.fillText('DOOMSHIELD · TACTICAL CYBER', 64, 114);
+
+    // Scénario
+    cx.font = '500 14px Poppins, sans-serif';
+    cx.fillStyle = '#8AA0B4';
+    cx.fillText(currentScenario.labelLong[lang].toUpperCase(), 64, 156);
+    cx.fillStyle = '#FF3864';
+    cx.fillRect(64, 168, 80, 3);
+
+    // Glyphe bouclier
+    drawShieldGlyph(cx, W - 96, 80, 56);
+
+    // ============ COURBE LUNA EN ARRIÈRE-PLAN (zone centrale) ============
+    const cBandTop = 230;
+    const cBandH = 340;
+    const cPadL = 64, cPadR = 64;
+    const cPlotW = W - cPadL - cPadR;
+    const candles = ALL;
+    let lo = Infinity, hi = -Infinity;
+    for (const c of candles) { if (c.l < lo) lo = c.l; if (c.h > hi) hi = c.h; }
+    lo = Math.max(lo, 1e-6);
+    const logLo = Math.log10(lo), logHi = Math.log10(hi);
+    const yFor = p => cBandTop + cBandH - ((Math.log10(Math.max(p,1e-6)) - logLo) / (logHi - logLo)) * cBandH;
+    const xFor = i => cPadL + (i / (candles.length - 1)) * cPlotW;
+
+    // Aire
+    cx.beginPath();
+    cx.moveTo(cPadL, cBandTop + cBandH);
+    candles.forEach((c, i) => cx.lineTo(xFor(i), yFor(c.c)));
+    cx.lineTo(W - cPadR, cBandTop + cBandH);
+    cx.closePath();
+    const areaGrad = cx.createLinearGradient(0, cBandTop, 0, cBandTop + cBandH);
+    areaGrad.addColorStop(0, 'rgba(45,226,230,0.22)');
+    areaGrad.addColorStop(1, 'rgba(45,226,230,0.0)');
+    cx.fillStyle = areaGrad;
+    cx.fill();
+
+    // Ligne
+    cx.beginPath();
+    candles.forEach((c, i) => {
+      const x = xFor(i), y = yFor(c.c);
+      if (i === 0) cx.moveTo(x, y); else cx.lineTo(x, y);
+    });
+    cx.strokeStyle = 'rgba(45,226,230,0.7)';
+    cx.lineWidth = 2.5;
+    cx.stroke();
+
+    // ============ POINT DE SORTIE ============
+    const sells = tradeLog.filter(tr => tr.type === 'sell');
+    let exitIdx = candles.length - 1;
+    let exitPrice = candles[candles.length - 1].c;
+    let exitLabelMain = lang === 'fr' ? 'TENU JUSQU\'AU BOUT' : 'HELD TO THE END';
+    let exitLabelSub = '';
+    if (sells.length > 0) {
+      let biggest = sells[0];
+      for (const s of sells) if (s.pct > biggest.pct) biggest = s;
+      const idxFound = candles.findIndex(c => c.t === biggest.t);
+      if (idxFound >= 0) {
+        exitIdx = idxFound;
+        exitPrice = biggest.price;
+        exitLabelMain = (lang === 'fr' ? 'SORTIE' : 'EXIT');
+        exitLabelSub = Math.round(biggest.pct * 100) + '% @ ' + fmtPrice(biggest.price);
+      }
+    }
+    const eX = xFor(exitIdx), eY = yFor(exitPrice);
+
+    // Halo radial
+    const haloGrad = cx.createRadialGradient(eX, eY, 0, eX, eY, 48);
+    haloGrad.addColorStop(0, 'rgba(255,56,100,0.7)');
+    haloGrad.addColorStop(1, 'rgba(255,56,100,0)');
+    cx.fillStyle = haloGrad;
+    cx.fillRect(eX - 48, eY - 48, 96, 96);
+
+    // Point central
+    cx.fillStyle = '#FF3864';
+    cx.beginPath(); cx.arc(eX, eY, 8, 0, Math.PI*2); cx.fill();
+    cx.strokeStyle = '#0E1A30';
+    cx.lineWidth = 2;
+    cx.stroke();
+
+    // Trait pointillé vertical du point vers le bas de la bande
+    cx.strokeStyle = 'rgba(255,56,100,0.55)';
+    cx.setLineDash([4, 4]);
+    cx.beginPath(); cx.moveTo(eX, eY + 10); cx.lineTo(eX, cBandTop + cBandH + 6); cx.stroke();
+    cx.setLineDash([]);
+
+    // Étiquette du point de sortie (positionnement adaptatif pour éviter les débordements)
+    cx.font = '700 13px Orbitron, sans-serif';
+    cx.fillStyle = '#FF3864';
+    const labelW = 130;
+    let labelX = eX;
+    let labelY = eY - 22;
+    // Si trop à droite, ancrer à droite ; si trop à gauche, ancrer à gauche ; sinon centre
+    if (eX > W - cPadR - labelW/2) { cx.textAlign = 'right'; labelX = eX + 14; }
+    else if (eX < cPadL + labelW/2) { cx.textAlign = 'left'; labelX = eX - 14; }
+    else { cx.textAlign = 'center'; }
+    // Si le point est trop haut, mettre l'étiquette en dessous
+    if (eY < cBandTop + 60) labelY = eY + 32;
+    cx.fillText(exitLabelMain, labelX, labelY);
+    if (exitLabelSub) {
+      cx.font = '500 12px Poppins, sans-serif';
+      cx.fillStyle = '#EAF2F8';
+      cx.fillText(exitLabelSub, labelX, labelY + 18);
+    }
+    cx.textAlign = 'left';
+
+    // ============ VERDICT — BIAIS + RANG dans un bloc fort ============
+    // Zone : sous la courbe, centrée
+    const vTop = 600;
+    // Label
+    cx.font = '500 12px Orbitron, sans-serif';
+    cx.fillStyle = '#8AA0B4';
+    cx.fillText(t.dbBiasLbl, 64, vTop);
+
+    // Couleur du verdict selon résultat
+    const biasColor = (rank === 'S' || rank === 'A') ? '#2DE2E6'
+                    : (rank === 'F' || rank === 'D') ? '#FF3864'
+                    : '#EAF2F8';
+
+    // Nom du biais à gauche
+    cx.font = '700 52px Orbitron, sans-serif';
+    cx.fillStyle = biasColor;
+    const biasName = bias.name[lang].toUpperCase();
+    wrapText(cx, biasName, 64, vTop + 46, W - 280, 58);
+
+    // Badge "RANG" à droite — gros carré chrome avec lettre
+    const badgeSize = 180;
+    const badgeX = W - 64 - badgeSize;
+    const badgeY = vTop + 6;
+    // Fond badge
+    cx.fillStyle = '#13243A';
+    cx.fillRect(badgeX, badgeY, badgeSize, badgeSize);
+    // Bordure cyan
+    cx.strokeStyle = biasColor;
+    cx.lineWidth = 2;
+    cx.strokeRect(badgeX, badgeY, badgeSize, badgeSize);
+    // Coin décoratif
+    cx.fillStyle = biasColor;
+    cx.fillRect(badgeX, badgeY, 6, 30);
+    cx.fillRect(badgeX, badgeY, 30, 6);
+    cx.fillRect(badgeX + badgeSize - 30, badgeY + badgeSize - 6, 30, 6);
+    cx.fillRect(badgeX + badgeSize - 6, badgeY + badgeSize - 30, 6, 30);
+    // Label "RANK"
+    cx.font = '500 11px Orbitron, sans-serif';
+    cx.fillStyle = '#8AA0B4';
+    cx.textAlign = 'center';
+    cx.fillText(t.dbRank.toUpperCase(), badgeX + badgeSize/2, badgeY + 28);
+    // Lettre du rang : GROS
+    cx.font = '700 120px Orbitron, sans-serif';
+    cx.fillStyle = biasColor;
+    cx.fillText(rank, badgeX + badgeSize/2, badgeY + 140);
+    cx.textAlign = 'left';
+
+    // ============ TAGLINE (italique, sous le verdict) ============
+    cx.font = 'italic 500 20px Poppins, sans-serif';
+    cx.fillStyle = '#EAF2F8';
+    const tagline = '"' + bias.desc[lang].split('.')[0] + '."';
+    wrapText(cx, tagline, 64, 830, W - 128, 28);
+
+    // ============ MÉTRIQUES — bande horizontale en bas ============
+    const metricsTop = 920;
+    const cells = [
+      { lbl: t.dbFinal.toUpperCase(),  val: fmtMoney(finalCap),                              color: pnl >= 0 ? '#34D399' : '#FF3864' },
+      { lbl: t.dbPnL.toUpperCase(),    val: (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%',     color: pnl >= 0 ? '#34D399' : '#FF3864' },
+      { lbl: t.dbTrades.toUpperCase(), val: String(trades),                                   color: '#EAF2F8' }
+    ];
+    const mGap = 24;
+    const mCellW = (W - 128 - mGap * (cells.length - 1)) / cells.length;
+    cells.forEach((c, i) => {
+      const x = 64 + i * (mCellW + mGap);
+      const y = metricsTop;
+      cx.fillStyle = 'rgba(19,36,58,0.7)';
+      cx.fillRect(x, y, mCellW, 70);
+      cx.strokeStyle = '#1E3047';
+      cx.lineWidth = 1;
+      cx.strokeRect(x, y, mCellW, 70);
+      cx.fillStyle = '#2DE2E6';
+      cx.fillRect(x, y, 3, 22);
+      cx.font = '500 10px Orbitron, sans-serif';
+      cx.fillStyle = '#8AA0B4';
+      cx.fillText(c.lbl, x + 14, y + 22);
+      cx.font = '700 26px Poppins, sans-serif';
+      cx.fillStyle = c.color;
+      cx.fillText(c.val, x + 14, y + 56);
+    });
+
+    // ============ SIGNATURE ============
+    cx.strokeStyle = '#1E3047';
+    cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(64, 1018); cx.lineTo(W - 64, 1018); cx.stroke();
+
+    cx.font = '700 14px Orbitron, sans-serif';
+    cx.fillStyle = '#2DE2E6';
+    cx.fillText('DOOMSHIELD.COM', 64, 1044);
+
+    cx.font = '400 11px Poppins, sans-serif';
+    cx.fillStyle = '#8AA0B4';
+    cx.textAlign = 'right';
+    cx.fillText(t.dbDisclaimer, W - 64, 1044);
+    cx.textAlign = 'left';
+  }
+
+  // Glyphe bouclier simple (formes de base, pas de chargement d'image)
+  function drawShieldGlyph(cx, ccx, ccy, size) {
+    cx.save();
+    cx.translate(ccx, ccy);
+    // Forme bouclier
+    cx.beginPath();
+    cx.moveTo(0, -size * 0.5);
+    cx.lineTo(size * 0.42, -size * 0.32);
+    cx.lineTo(size * 0.42, size * 0.18);
+    cx.quadraticCurveTo(size * 0.42, size * 0.5, 0, size * 0.55);
+    cx.quadraticCurveTo(-size * 0.42, size * 0.5, -size * 0.42, size * 0.18);
+    cx.lineTo(-size * 0.42, -size * 0.32);
+    cx.closePath();
+    // Remplissage chrome
+    const sg = cx.createLinearGradient(0, -size * 0.5, 0, size * 0.55);
+    sg.addColorStop(0, '#B8C6D4');
+    sg.addColorStop(1, '#5A6E83');
+    cx.fillStyle = sg;
+    cx.fill();
+    // Bordure
+    cx.strokeStyle = '#2DE2E6';
+    cx.lineWidth = 1.5;
+    cx.stroke();
+    // Arc radar à l'intérieur
+    cx.strokeStyle = '#2DE2E6';
+    cx.lineWidth = 1;
+    cx.beginPath();
+    cx.arc(0, 0, size * 0.22, Math.PI * 0.15, Math.PI * 0.85);
+    cx.stroke();
+    cx.beginPath();
+    cx.arc(0, 0, size * 0.32, Math.PI * 0.10, Math.PI * 0.90);
+    cx.stroke();
+    cx.restore();
+  }
+  function wrapText(cx, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(' ');
+    let line = '';
+    for (let n = 0; n < words.length; n++) {
+      const test = line + words[n] + ' ';
+      if (cx.measureText(test).width > maxWidth && line.length > 0) {
+        cx.fillText(line.trim(), x, y);
+        line = words[n] + ' ';
+        y += lineHeight;
+      } else {
+        line = test;
+      }
+    }
+    cx.fillText(line.trim(), x, y);
+    return y;
+  }
+
+  // Bouton "Partager sur X" — Web Share API si disponible (mobile),
+  // sinon télécharge la carte + ouvre X avec un tweet pré-rempli.
+  async function shareOnX() {
+    const t = I18N[lang];
+    const bias = detectBias();
+    const finalCap = totalValue();
+    const pnl = ((finalCap / INITIAL_CAPITAL) - 1) * 100;
+    const rank = survivalRank(finalCap);
+    const pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%';
+    const text = t.tweetText(bias.name[lang], rank, pnlStr);
+
+    const cv = document.getElementById('share-card');
+    // Try Web Share API with file (best on mobile)
+    if (navigator.canShare && cv.toBlob) {
+      try {
+        const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+        const file = new File([blob], 'doomsim-result.png', { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], text, title: 'DoomSimulator' });
+          return;
+        }
+      } catch (_) { /* fall through to fallback */ }
+    }
+    // Fallback : télécharger la carte, puis ouvrir l'intent X avec le tweet pré-rempli.
+    // L'utilisateur attache la carte manuellement (X/Twitter ne permet pas l'attachement via URL).
+    try {
+      const url = cv.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'doomsim-' + bias.key + '-' + Date.now() + '.png';
+      a.click();
+    } catch (_) { /* ignore */ }
+    // Petite pause pour laisser le téléchargement démarrer avant d'ouvrir X
+    setTimeout(() => {
+      const intent = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text);
+      window.open(intent, '_blank', 'noopener,noreferrer');
+    }, 300);
+  }
+  document.getElementById('db-share-x').addEventListener('click', shareOnX);
+
+  // Export texte du rapport (Bloc 5 enrichi)
+  function exportReportTxt() {
+    const t = I18N[lang];
+    const bias = detectBias();
+    const finalCap = totalValue();
+    const pnl = ((finalCap / INITIAL_CAPITAL) - 1) * 100;
+    const totalFees = tradeLog.reduce((s, x) => s + (x.fee || 0), 0);
+    const rank = survivalRank(finalCap);
+    // Convertir HTML -> texte brut pour la leçon (supprimer balises <b> etc.)
+    const stripHtml = (s) => s.replace(/<[^>]*>/g, '');
+    const lines = [];
+    lines.push('=================================================');
+    lines.push('  DOOMSIMULATOR — ' + currentScenario.labelLong[lang]);
+    lines.push('  ' + t.dbTag.replace(/^\/\/\s*/, ''));
+    lines.push('=================================================');
+    lines.push('');
+    lines.push(t.dbBiasLbl + ': ' + bias.name[lang]);
+    lines.push('  ' + stripHtml(bias.desc[lang]));
+    lines.push('');
+    lines.push('-------- ' + t.dbStatsLbl + ' --------');
+    lines.push('  ' + t.dbFinal + '  : ' + fmtMoney(finalCap));
+    lines.push('  ' + t.dbPnL + '       : ' + (pnl>=0?'+':'') + pnl.toFixed(2) + '%');
+    lines.push('  ' + t.dbTrades + '    : ' + tradeLog.length);
+    lines.push('  ' + t.dbFees + ' : ' + fmtMoney(totalFees));
+    lines.push('  ' + t.dbRank + ' : ' + rank);
+    lines.push('  Analyses used : ' + (ANALYZE_MAX - analyzeUsesLeft) + ' / ' + ANALYZE_MAX);
+    lines.push('');
+    lines.push('-------- ' + t.dbLessonLbl + ' --------');
+    // Wrapper la leçon à ~70 caractères
+    const lesson = stripHtml(bias.lesson[lang]);
+    const words = lesson.split(' ');
+    let cur = '  ';
+    for (const w of words) {
+      if ((cur + w).length > 72) { lines.push(cur); cur = '  ' + w + ' '; }
+      else cur += w + ' ';
+    }
+    if (cur.trim()) lines.push(cur);
+    lines.push('');
+    lines.push('-------- TRADE LOG --------');
+    if (tradeLog.length === 0) {
+      lines.push('  (no trades made)');
+    } else {
+      tradeLog.forEach((tr, i) => {
+        const d = new Date(tr.t);
+        const ds = d.toISOString().slice(0,16).replace('T',' ') + ' UTC';
+        lines.push('  #' + (i+1) + ' [' + ds + ']  ' + tr.type.toUpperCase() + ' ' + Math.round(tr.pct*100) + '%  @ ' + fmtPrice(tr.price) + '  (fee: ' + fmtMoney(tr.fee) + ')');
+      });
+    }
+    if (analyzeLog.length > 0) {
+      lines.push('');
+      lines.push('-------- ANALYSES --------');
+      analyzeLog.forEach((a, i) => {
+        lines.push('  #' + (i+1) + ' @ tick ' + a.idx + '  ' + stripHtml(t['analyzeClues_' + currentScenario.id][a.key]));
+      });
+    }
+    lines.push('');
+    lines.push('-------------------------------------------------');
+    lines.push(t.dbDisclaimer);
+    lines.push('=================================================');
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'doomsim-report-' + bias.key + '-' + Date.now() + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Téléchargement de la carte en PNG
+  document.getElementById('db-download').addEventListener('click', () => {
+    const cv = document.getElementById('share-card');
+    const url = cv.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `doomsim-${detectBias().key}-${Date.now()}.png`;
+    a.click();
+  });
+
+  // Fermer débrief
+  document.getElementById('db-close').addEventListener('click', () => {
+    document.getElementById('debrief-backdrop').classList.remove('show');
+  });
+
+  function reset() {
+    stopped = true;
+    setTimeout(() => {
+      idx = 0;
+      displayed = [];
+      viewOffset = 0;
+      phase = 'playing';
+      // Réinitialiser le portefeuille : 50 % LUNA / 50 % cash au prix de départ
+      qty = (INITIAL_CAPITAL * INITIAL_LUNA_FRAC) / START_PRICE;
+      cash = INITIAL_CAPITAL * (1 - INITIAL_LUNA_FRAC);
+      tradeLog = [];
+      eventDecisions = [];
+      firedEvents = new Set();
+      // Réinitialiser jauges psy et analyses
+      psy = { stress: 0, impulse: 0, illusion: 0, lucidity: 100 };
+      psyHistory = [];
+      analyzeUsesLeft = ANALYZE_MAX;
+      analyzeLog = [];
+      const fb = document.getElementById('analyze-feedback');
+      if (fb) fb.classList.remove('show');
+      renderPsy();
+      document.getElementById('tick-now').textContent = '0';
+      // Fermer les overlays s'ils sont ouverts
+      document.getElementById('modal-backdrop').classList.remove('show');
+      document.getElementById('debrief-backdrop').classList.remove('show');
+      if (modalRefreshId) { clearInterval(modalRefreshId); modalRefreshId = null; }
+      document.getElementById('endcard').classList.remove('show');
+      document.getElementById('scrubber-wrap').classList.remove('show');
+      document.getElementById('zoom-hint').textContent = I18N[lang].hintPlay;
+      stopped = false;
+      // démarrage : on pousse la première bougie tout de suite
+      displayed.push(ALL[0]);
+      idx = 1;
+      updateStats();
+      draw();
+      // Phase idle : on attend que le joueur clique sur PLAY
+      phase = 'idle';
+      const ov = document.getElementById('play-overlay');
+      if (ov) ov.classList.remove('hidden');
+    }, 50);
+  }
+
+  // Bascule de scénario : recharge les données et reset
+  function changeScenario(newId) {
+    if (!SCENARIOS[newId] || newId === currentScenarioId) return;
+    currentScenarioId = newId;
+    currentScenario = SCENARIOS[newId];
+    ALL = currentScenario.candles;
+    START_PRICE = ALL[0].c;
+    EVENTS = buildEvents();
+    // Mettre à jour le compteur de ticks total dans le bandeau
+    document.getElementById('tick-total').textContent = ALL.length;
+    // Mettre à jour le label du scénario sous le titre
+    document.getElementById('scenario-label').textContent = currentScenario.labelLong[lang];
+    // === HOOK BACKEND : prévenir Lovable du changement de scénario ===
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'doomsim:scenarioChange', scenarioId: newId }, '*');
+      }
+    } catch (_) { /* silencieux */ }
+    // Relancer une partie propre
+    reset();
+  }
+
+  // ============================================================
+  // INTERACTIONS : zoom (molette + pincée), pan (drag), scrubber
+  // ============================================================
+  function setVisible(n) {
+    visibleCount = Math.max(MIN_VISIBLE, Math.min(MAX_VISIBLE, Math.round(n)));
+    draw();
+  }
+  function setOffset(n) {
+    const maxOff = Math.max(0, displayed.length - 1);
+    viewOffset = Math.max(0, Math.min(maxOff, Math.round(n)));
+    // synchroniser le scrubber si visible
+    const sc = document.getElementById('scrubber');
+    if (sc && phase === 'finished') {
+      sc.value = Math.max(0, displayed.length - 1 - viewOffset);
+    }
+    draw();
+  }
+
+  // Zoom à la molette (toujours actif)
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    // delta positif = scroll vers le bas = dézoomer (plus de bougies)
+    const factor = e.deltaY > 0 ? 1.15 : 1/1.15;
+    setVisible(visibleCount * factor);
+  }, { passive: false });
+
+  // Tooltip / hover sur les bougies
+  const tooltipEl = document.getElementById('tooltip');
+  let hoverTimestamp = null;    // timestamp de la bougie hover (stable même quand draw redessine)
+  function hideTooltip() {
+    if (hoverIndex !== null || hoverTimestamp !== null) {
+      hoverIndex = null;
+      hoverTimestamp = null;
+      tooltipEl.classList.remove('show');
+      draw();
+    }
+  }
+  function findBougieAt(clientX, clientY) {
+    if (!plotBounds || hitmap.length === 0) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < plotBounds.padL || x > plotBounds.w - plotBounds.padR) return null;
+    if (y < plotBounds.padT || y > plotBounds.h - plotBounds.padB) return null;
+    let bestI = 0, bestD = Infinity;
+    for (let i = 0; i < hitmap.length; i++) {
+      const d = Math.abs(hitmap[i].x - x);
+      if (d < bestD) { bestD = d; bestI = i; }
+    }
+    return bestI;
+  }
+  function showTooltipFor(i, clientX, clientY) {
+    if (i === null) { hideTooltip(); return; }
+    const candle = hitmap[i].candle;
+    hoverIndex = i;
+    hoverTimestamp = candle.t;
+    const t = I18N[lang];
+    const d = new Date(candle.t);
+    const months = lang==='fr'
+      ? ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']
+      : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const dateStr = `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()} · ${String(d.getUTCHours()).padStart(2,'0')}:00 UTC`;
+    const bullish = candle.c >= candle.o;
+    const closeCls = bullish ? 'bull' : 'bear';
+    tooltipEl.innerHTML =
+      `<div class="tt-date">${dateStr}</div>` +
+      `<div class="tt-row"><span class="lbl">${t.ttOpen}</span><span class="val">${fmtPrice(candle.o)}</span></div>` +
+      `<div class="tt-row"><span class="lbl">${t.ttHigh}</span><span class="val bull">${fmtPrice(candle.h)}</span></div>` +
+      `<div class="tt-row"><span class="lbl">${t.ttLow}</span><span class="val bear">${fmtPrice(candle.l)}</span></div>` +
+      `<div class="tt-row"><span class="lbl">${t.ttClose}</span><span class="val ${closeCls}">${fmtPrice(candle.c)}</span></div>`;
+    tooltipEl.classList.add('show');
+    // Positionnement
+    const wrapRect = canvas.parentElement.getBoundingClientRect();
+    const candleX = hitmap[i].x;
+    const offset = 14;
+    const ttW = tooltipEl.offsetWidth;
+    const ttH = tooltipEl.offsetHeight;
+    let left = candleX + offset;
+    if (left + ttW > wrapRect.width - 8) left = candleX - ttW - offset;
+    let top = (clientY - wrapRect.top) - ttH / 2;
+    if (top < 4) top = 4;
+    if (top + ttH > wrapRect.height - 4) top = wrapRect.height - ttH - 4;
+    tooltipEl.style.left = left + 'px';
+    tooltipEl.style.top = top + 'px';
+    draw();
+  }
+  // Quand draw() est appelé (par le step du jeu, le zoom, etc.), on essaie de re-localiser
+  // la bougie hover par timestamp et de repositionner le crosshair.
+  function syncHoverAfterDraw() {
+    if (hoverTimestamp === null) return;
+    let found = -1;
+    for (let j = 0; j < hitmap.length; j++) {
+      if (hitmap[j].candle.t === hoverTimestamp) { found = j; break; }
+    }
+    if (found === -1) {
+      // la bougie n'est plus dans la fenêtre visible -> on cache
+      hoverIndex = null;
+      tooltipEl.classList.remove('show');
+    } else {
+      hoverIndex = found;
+    }
+  }
+
+  // Pan glisser (uniquement en mode exploration)
+  let dragging = false, dragStartX = 0, dragStartOffset = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    if (phase !== 'finished') return;
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartOffset = viewOffset;
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = 'grabbing';
+    hideTooltip();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (dragging) {
+      const dx = e.clientX - dragStartX;
+      const candlePixelWidth = canvas.clientWidth / visibleCount;
+      const deltaCandles = dx / candlePixelWidth;
+      setOffset(dragStartOffset + deltaCandles);
+      return;
+    }
+    // Hover : sur souris uniquement (pas pendant un touch — sinon ça flashe au pincement)
+    if (e.pointerType === 'touch') return;
+    const i = findBougieAt(e.clientX, e.clientY);
+    if (i === null) { hideTooltip(); return; }
+    showTooltipFor(i, e.clientX, e.clientY);
+  });
+  canvas.addEventListener('pointerleave', hideTooltip);
+  canvas.addEventListener('pointerup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    canvas.style.cursor = '';
+  });
+  canvas.addEventListener('pointercancel', () => { dragging = false; canvas.style.cursor = ''; });
+
+  // Pincée tactile (zoom à deux doigts)
+  let pinchDist = null, pinchVisibleStart = 60;
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchDist = Math.hypot(dx, dy);
+      pinchVisibleStart = visibleCount;
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && pinchDist) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const d = Math.hypot(dx, dy);
+      const ratio = d / pinchDist;
+      // doigts qui s'écartent (ratio > 1) = zoom IN = moins de bougies
+      setVisible(pinchVisibleStart / ratio);
+      e.preventDefault();
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => { pinchDist = null; });
+
+  // Scrubber (mode exploration)
+  document.getElementById('scrubber').addEventListener('input', (e) => {
+    if (phase !== 'finished') return;
+    const v = parseInt(e.target.value, 10);
+    // v = position depuis le début ; on convertit en offset depuis la fin
+    setOffset(displayed.length - 1 - v);
+    // Afficher le tooltip sur la dernière bougie visible (le "moment" pointé par le scrubber)
+    if (hitmap.length > 0) {
+      const last = hitmap[hitmap.length - 1];
+      const rect = canvas.getBoundingClientRect();
+      // simuler une position curseur centrée verticalement sur le canvas
+      showTooltipFor(hitmap.length - 1, rect.left + last.x, rect.top + canvas.clientHeight/2);
+    }
+  });
+
+  // Bouton reset view : revient au présent + zoom par défaut
+  document.getElementById('reset-view').addEventListener('click', () => {
+    viewOffset = 0;
+    setVisible(60);
+  });
+
+  // Bouton plein écran : utilise l'API Fullscreen native du navigateur
+  const fsBtn = document.getElementById('fs-btn');
+  const chartPanel = document.getElementById('chart-panel');
+  function isFs() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+  fsBtn.addEventListener('click', async () => {
+    try {
+      if (!isFs()) {
+        if (chartPanel.requestFullscreen) await chartPanel.requestFullscreen();
+        else if (chartPanel.webkitRequestFullscreen) chartPanel.webkitRequestFullscreen();
+      } else {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+    } catch (e) { /* l'utilisateur a refusé, ignore silencieusement */ }
+  });
+  // Quand on entre/sort du plein écran, recalibrer le canvas
+  document.addEventListener('fullscreenchange', () => { fitCanvas(); draw(); });
+  document.addEventListener('webkitfullscreenchange', () => { fitCanvas(); draw(); });
+
+  document.getElementById('replay').addEventListener('click', reset);
+  document.getElementById('lang').addEventListener('change', e => { lang = e.target.value; applyLang(); updateStats(); draw(); });
+  document.getElementById('scen-select').addEventListener('change', e => { changeScenario(e.target.value); });
+
+  // Bouton PLAY : sort de la phase idle, lance step()
+  document.getElementById('play-btn').addEventListener('click', () => {
+    if (phase !== 'idle') return;
+    phase = 'playing';
+    document.getElementById('play-overlay').classList.add('hidden');
+    setTimeout(step, 400);
+  });
+
+  // Boutons d'achat / vente (BUY/SELL avec data-pct ; on exclut ANALYZE)
+  document.querySelectorAll('.abtn').forEach(btn => {
+    if (btn.classList.contains('analyze')) return;          // géré séparément
+    btn.addEventListener('click', () => {
+      if (!btn.dataset.action || !btn.dataset.pct) return;
+      doTrade(btn.dataset.action, btn.dataset.pct);
+    });
+  });
+  // Bouton ANALYZE (Bloc 4 enrichi — révèle un indice DoomScan)
+  document.getElementById('analyze-btn').addEventListener('click', doAnalyze);
+
+  // Bouton export texte (Bloc 5 enrichi — rapport en .txt)
+  document.getElementById('db-export-txt').addEventListener('click', exportReportTxt);
+
+  fitCanvas();
+  applyLang();
+  // Init portefeuille : 50 % LUNA / 50 % cash au prix de départ
+  qty = (INITIAL_CAPITAL * INITIAL_LUNA_FRAC) / START_PRICE;
+  cash = INITIAL_CAPITAL * (1 - INITIAL_LUNA_FRAC);
+  // Init compteur de ticks
+  document.getElementById('tick-total').textContent = ALL.length;
+  renderPsy();
+  // démarrage : on pousse la première bougie pour qu'il y ait quelque chose à voir
+  displayed.push(ALL[0]);
+  idx = 1;
+  updateStats();
+  draw();
+  // Phase idle : on attend le clic PLAY
+  phase = 'idle';
+
+  // === HOOK BACKEND : prévenir Lovable que le jeu est prêt à être joué ===
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'doomsim:ready', scenarioId: currentScenarioId }, '*');
+    }
+  } catch (_) { /* silencieux */ }
+})();
+</script>
+
+
+<script>
+if (!window.LUNA_CANDLES || !Array.isArray(window.LUNA_CANDLES) || window.LUNA_CANDLES.length === 0) {
+  document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:#FF3864;background:#0B1220;min-height:100vh">Erreur : données LUNA non chargées. Le fichier est corrompu.</div>';
+}
+</script>
+</body>
+</html>
