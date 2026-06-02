@@ -1594,14 +1594,12 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
     document.getElementById('debrief-backdrop').classList.add('show');
 
     // === HOOK BACKEND : envoyer le résumé de la partie à la page parente (Lovable) ===
-    // Si le jeu tourne dans un iframe, postMessage relaie le résultat au parent qui l'enregistre en base.
-    // En usage standalone (pas d'iframe), le hook s'exécute mais n'a aucun effet visible.
     try {
       const payload = {
-        scenario_id: currentScenarioId,        // 'luna' | 'sol'
-        bias_key: bias.key,                     // 'diamond' | 'panic' | 'survivor' | 'dipBuyer' | 'overtrader'
-        bias_name: bias.name[lang],             // nom localisé
-        rank: rank,                             // 'S' | 'A' | 'B' | 'C' | 'D' | 'F'
+        scenario_id: currentScenarioId,
+        bias_key: bias.key,
+        bias_name: bias.name[lang],
+        rank: rank,
         final_capital: +finalCap.toFixed(2),
         pnl_percent: +pnl.toFixed(2),
         trades_count: tradeLog.length,
@@ -1610,10 +1608,10 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
         lang: lang,
         played_at: new Date().toISOString()
       };
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'doomsim:gameEnd', payload }, '*');
-      }
-    } catch (_) { /* silencieux : ne doit jamais casser le jeu */ }
+      // On envoie toujours — que ce soit en iframe ou standalone.
+      // La page parente filtre sur e.data.type === 'doomsim:gameEnd'.
+      window.parent.postMessage({ type: 'doomsim:gameEnd', payload }, '*');
+    } catch (_) { /* silencieux */ }
   }
 
   // ============================================================
@@ -2076,9 +2074,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
     document.getElementById('scenario-label').textContent = currentScenario.labelLong[lang];
     // === HOOK BACKEND : prévenir Lovable du changement de scénario ===
     try {
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'doomsim:scenarioChange', scenarioId: newId }, '*');
-      }
+      window.parent.postMessage({ type: 'doomsim:scenarioChange', scenarioId: newId }, '*');
     } catch (_) { /* silencieux */ }
     // Relancer une partie propre
     reset();
@@ -2327,9 +2323,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
 
   // === HOOK BACKEND : prévenir Lovable que le jeu est prêt à être joué ===
   try {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: 'doomsim:ready', scenarioId: currentScenarioId }, '*');
-    }
+    window.parent.postMessage({ type: 'doomsim:ready', scenarioId: currentScenarioId }, '*');
   } catch (_) { /* silencieux */ }
 })();
 </script>
