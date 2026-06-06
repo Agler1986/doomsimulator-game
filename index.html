@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DoomSimulator — DoomShield</title>
+<title>DoomSimulator — Doomie</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
@@ -566,7 +566,7 @@
         </div>
       </div>
       <div class="action-row">
-        <div class="action-label" id="lbl-analyze">ANALYZE · DoomScan signal</div>
+        <div class="action-label" id="lbl-analyze">ANALYZE · DoomProphecy signal</div>
         <div class="action-btns single">
           <button class="abtn analyze" id="analyze-btn" data-action="analyze">RUN ANALYSIS <span class="analyze-uses" id="analyze-uses">(3 left)</span></button>
         </div>
@@ -986,7 +986,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
   // Jauges psychologiques (Bloc 4 enrichi) — état émotionnel visible en direct
   let psy = { stress: 0, impulse: 0, illusion: 0, lucidity: 100 };
   let psyHistory = [];          // pour le débrief : snapshots de psy à chaque tick
-  // Analyses DoomScan
+  // Analyses DoomProphecy
   const ANALYZE_MAX = 3;
   let analyzeUsesLeft = ANALYZE_MAX;
   let analyzeLog = [];          // [{t, clue}]
@@ -1015,7 +1015,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
           fees:'Fee: 0.3% per trade',
           modalTag:'CRITICAL EVENT', modalPrice:'PRICE', modalPort:'PORTFOLIO',
           hold:'HOLD · do nothing',
-          analyze:'ANALYZE · DoomScan signal',
+          analyze:'ANALYZE · DoomProphecy signal',
           analyzeBtn:'RUN ANALYSIS',
           analyzeUses:(n) => `(${n} left)`,
           psy:'PSYCHOLOGICAL STATE',
@@ -1044,7 +1044,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
           dbDisclaimer:'Virtual capital · pedagogical simulation · not investment advice.',
           dbExportTxt:'Export report',
           dbShareX:'Share on X',
-          tweetText:(biasName, rank, pnl) => `Doomie just read my soul on DoomSimulator.\n\nVerdict: ${biasName} · Rank ${rank} · P&L ${pnl}\n\nThink your hands are stronger? Go get doomed too 👻🪦 doomshield.com\n\n#DoomShield #Crypto`,
+          tweetText:(biasName, rank, pnl) => `Doomie just read my soul on DoomSimulator.\n\nVerdict: ${biasName} · Rank ${rank} · P&L ${pnl}\n\nThink your hands are stronger? Go get doomed too 👻🪦 doomie.fun\n\n#Doomie #Crypto`,
           shareCopiedHint:'Card copied — paste it into your post.',
           playTag:'// MISSION BRIEFING',
           playTitle:"I died in this crash. You're about to live it in my place.",
@@ -1064,7 +1064,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
           fees:'Frais : 0,3 % par opération',
           modalTag:'ÉVÉNEMENT CRITIQUE', modalPrice:'PRIX', modalPort:'PORTEFEUILLE',
           hold:'GARDER · ne rien faire',
-          analyze:'ANALYSER · signal DoomScan',
+          analyze:'ANALYSER · signal DoomProphecy',
           analyzeBtn:'LANCER L\'ANALYSE',
           analyzeUses:(n) => `(${n} restantes)`,
           psy:'ÉTAT PSYCHOLOGIQUE',
@@ -1092,7 +1092,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
           dbDisclaimer:'Capital virtuel · simulation pédagogique · aucun conseil en investissement.',
           dbExportTxt:'Exporter le rapport',
           dbShareX:'Partager sur X',
-          tweetText:(biasName, rank, pnl) => `Doomie a lu dans mon âme sur DoomSimulator.\n\nVerdict : ${biasName} · Rang ${rank} · P&L ${pnl}\n\nTu crois avoir les mains plus solides ? Va te faire doom aussi 👻🪦 doomshield.com\n\n#DoomShield #Crypto`,
+          tweetText:(biasName, rank, pnl) => `Doomie a lu dans mon âme sur DoomSimulator.\n\nVerdict : ${biasName} · Rang ${rank} · P&L ${pnl}\n\nTu crois avoir les mains plus solides ? Va te faire doom aussi 👻🪦 doomie.fun\n\n#Doomie #Crypto`,
           shareCopiedHint:'Carte copiée — colle-la dans ton post.',
           playTag:'// BRIEFING DE MISSION',
           playTitle:"Je suis mort dans ce crash. Tu vas le revivre à ma place.",
@@ -1405,7 +1405,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
   }
 
   // ============================================================
-  // ANALYZE — révèle un indice contextuel basé sur ce que DoomScan révélerait
+  // ANALYZE — révèle un indice contextuel basé sur ce que DoomProphecy révélerait
   // ============================================================
   function doAnalyze() {
     if (phase !== 'playing') return;
@@ -1890,7 +1890,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
     cx.fillText('// DOOMSIMULATOR', 64, 88);
     cx.font = '500 13px Orbitron, sans-serif';
     cx.fillStyle = '#2DE2E6';
-    cx.fillText('DOOMSHIELD · TACTICAL CYBER', 64, 114);
+    cx.fillText('DOOMIE · ON-CHAIN', 64, 114);
 
     // Scénario
     cx.font = '500 14px Poppins, sans-serif';
@@ -2101,7 +2101,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
 
     cx.font = '700 14px Orbitron, sans-serif';
     cx.fillStyle = '#2DE2E6';
-    cx.fillText('DOOMSHIELD.COM', 64, 1054);
+    cx.fillText('DOOMIE.FUN', 64, 1054);
 
     cx.font = '400 11px Poppins, sans-serif';
     cx.fillStyle = '#8AA0B4';
@@ -2593,7 +2593,7 @@ window.SOL_CANDLES = [{"t":1667260800000,"o":32.57,"h":32.78,"l":32.5,"c":32.65}
       doTrade(btn.dataset.action, btn.dataset.pct);
     });
   });
-  // Bouton ANALYZE (Bloc 4 enrichi — révèle un indice DoomScan)
+  // Bouton ANALYZE (Bloc 4 enrichi — révèle un indice DoomProphecy)
   document.getElementById('analyze-btn').addEventListener('click', doAnalyze);
 
   // Bouton export texte (Bloc 5 enrichi — rapport en .txt)
